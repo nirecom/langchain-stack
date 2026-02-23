@@ -1,0 +1,40 @@
+services:
+  langchain-api:
+    build:
+      context: ./app
+    container_name: langchain-api
+    ports:
+      - "${LANGCHAIN_API_PORT:-8100}:8100"
+    environment:
+      - LITELLM_PROXY_URL=${LITELLM_PROXY_URL}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - MAX_JUDGE_RETRIES=${MAX_JUDGE_RETRIES:-2}
+    volumes:
+      - ./config:/config:ro
+      - ./data/documents:/data/documents
+    depends_on:
+      chromadb:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "${CHROMA_PORT:-8200}:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+networks:
+  langchain-net:
+    driver: bridge

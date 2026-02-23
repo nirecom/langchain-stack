@@ -1,0 +1,20 @@
+# Judge evaluation criteria for LLM-as-a-Judge chain.
+# These rules are injected into the Judge prompt.
+
+default:
+  description: "General-purpose quality evaluation"
+  criteria:
+    - "Accuracy: Does the answer correctly address the question?"
+    - "Completeness: Are all parts of the question answered?"
+    - "Coherence: Is the answer logically structured and easy to follow?"
+    - "Relevance: Does the answer stay on topic without unnecessary tangents?"
+  pass_threshold: 3
+
+rag:
+  description: "RAG-specific evaluation (when context is provided)"
+  criteria:
+    - "Faithfulness: Is the answer grounded in the provided context?"
+    - "Accuracy: Does the answer correctly interpret the source material?"
+    - "Completeness: Does the answer use all relevant information from context?"
+    - "No Hallucination: Does the answer avoid claims not supported by context?"
+  pass_threshold: 3

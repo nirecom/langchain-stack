@@ -1,0 +1,16 @@
+# Phase 2: Skeleton (reasoner passthrough via LiteLLM)
+fastapi>=0.115
+uvicorn>=0.34
+langchain>=0.3
+langchain-openai>=0.3
+pyyaml>=6.0
+pydantic-settings>=2.0
+
+# Phase 3: Judge chain (no additional deps needed)
+
+# Phase 4: RAG — uncomment when implementing
+# langchain-community>=0.3
+# chromadb>=1.0
+# pypdf>=5.0
+# openpyxl>=3.1
+# unstructured>=0.16
