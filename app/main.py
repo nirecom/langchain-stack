@@ -2,10 +2,16 @@
 LangChain API Server — OpenAI-compatible endpoint.
 Exposes LLM-as-a-Judge chain via /v1/chat/completions.
 """
+import logging
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain
 from rag.retriever import get_relevant_context
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
 
 app = FastAPI(
     title="LangChain Judge API",
@@ -61,5 +67,6 @@ async def chat_completions(request: ChatRequest):
             "judge_verdict": result["verdict"],
             "judge_score": result["score"],
             "retries": result["retries"],
+            "judge_feedback": result["judge_feedback"],
         },
     }

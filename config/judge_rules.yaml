@@ -1,20 +1,23 @@
 # Judge evaluation criteria for LLM-as-a-Judge chain.
-# These rules are injected into the Judge prompt.
+# Phase 3A: LLM-based evaluation (tentative — replaced by RAGAS in Phase 3B)
+# Phase 4+: RAG-specific criteria added
 
 default:
-  description: "General-purpose quality evaluation"
+  description: "General-purpose quality evaluation (Response Relevancy-tentative)"
   criteria:
-    - "Accuracy: Does the answer correctly address the question?"
+    - "Relevance: Does the answer directly address the question asked?"
     - "Completeness: Are all parts of the question answered?"
     - "Coherence: Is the answer logically structured and easy to follow?"
-    - "Relevance: Does the answer stay on topic without unnecessary tangents?"
+    - "Conciseness: Does the answer stay on topic without unnecessary tangents?"
   pass_threshold: 3
+  # NOTE: This tentative LLM-based evaluation will be replaced by
+  # RAGAS Response Relevancy metric in Phase 3B.
 
-rag:
-  description: "RAG-specific evaluation (when context is provided)"
-  criteria:
-    - "Faithfulness: Is the answer grounded in the provided context?"
-    - "Accuracy: Does the answer correctly interpret the source material?"
-    - "Completeness: Does the answer use all relevant information from context?"
-    - "No Hallucination: Does the answer avoid claims not supported by context?"
-  pass_threshold: 3
+# rag:
+#   description: "RAG-specific evaluation (Phase 4)"
+#   criteria:
+#     - "Faithfulness: Is the answer grounded in the provided context?"
+#     - "Accuracy: Does the answer correctly interpret the source material?"
+#     - "Completeness: Does the answer use all relevant information from context?"
+#     - "No Hallucination: Does the answer avoid claims not supported by context?"
+#   pass_threshold: 3
