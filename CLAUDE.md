@@ -51,6 +51,7 @@ curl http://localhost:8100/v1/chat/completions \
 - **Settings**: `app/settings.py` — Pydantic Settings loads env vars + YAML configs (`config/models.yaml`, `config/judge_rules.yaml`) at startup
 - **LLM Provider Isolation**: All model instantiation in `app/models/provider.py` via `get_reasoner()`/`get_judge()` factory functions using LangChain's `ChatOpenAI`
 - **Orchestration**: `app/chains/llm_as_judge.py` — Reasoner → RAGAS Response Relevancy evaluation pipeline
+- **Judge Feedback**: `app/chains/judge.py` — `generate_feedback()` for FAIL retry (Phase 3C)
 - **RAGAS Evaluation**: `app/evaluation/metrics.py` — RAGAS Response Relevancy scorer (Judge LLM for question generation + ruri embeddings for similarity)
 - **RAG Retriever**: `app/rag/retriever.py` — ChromaDB stub for Phase 4
 - **API**: `app/main.py` — FastAPI with `/health` and `/v1/chat/completions` (OpenAI-compatible format with added `metadata` field for judge verdict/score)
@@ -74,8 +75,8 @@ curl http://localhost:8100/v1/chat/completions \
 |-------|--------|-------|
 | 2 | Done | Reasoner passthrough via LiteLLM |
 | 3A | Done | Reasoner → Judge LLM evaluation (no retry) |
-| 3B | Current | RAGAS Response Relevancy quantitative scoring |
-| 3C | Next | Judge feedback + retry loop |
+| 3B | Done | RAGAS Response Relevancy quantitative scoring |
+| 3C | Done | Judge feedback + retry loop |
 | 4 | Future | RAG: ChromaDB ingestion + vector search retrieval |
 
 ## Phase Lifecycle
