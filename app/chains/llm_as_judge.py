@@ -1,14 +1,13 @@
 """
-LLM-as-a-Judge orchestration.
+LLM-as-a-Judge orchestration with RAGAS evaluation.
 
-Phase 3A: Reasoner → Judge LLM (no retry).
 Phase 3B: Judge LLM verdict replaced by RAGAS score.
 Phase 3C: Retry loop with feedback added.
 """
 import uuid
 import logging
 from models.provider import get_reasoner
-from chains.judge import evaluate_answer
+from evaluation.metrics import compute_response_relevancy
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ async def run_judge_chain(
     temperature: float = 0.7,
 ) -> dict:
     """
-    Run Reasoner → Judge pipeline (no retry in Phase 3A).
+    Run Reasoner → RAGAS evaluation pipeline (Phase 3B).
 
     Args:
         prompt: User question
@@ -27,7 +26,7 @@ async def run_judge_chain(
         temperature: Reasoner temperature
 
     Returns:
-        dict with final_answer, verdict, score, feedback, retries
+        dict with final_answer, verdict, score, retries
     """
     run_id = str(uuid.uuid4())[:8]
     reasoner = get_reasoner(temperature=temperature)
@@ -41,11 +40,11 @@ async def run_judge_chain(
 
     logger.info("[%s] Reasoner generated answer (%d chars)", run_id, len(answer))
 
-    # Step 2: Judge the answer
-    evaluation = await evaluate_answer(question=prompt, answer=answer)
+    # Step 2: RAGAS Response Relevancy evaluation
+    evaluation = await compute_response_relevancy(question=prompt, answer=answer)
 
     logger.info(
-        "[%s] Judge result: verdict=%s score=%s",
+        "[%s] RAGAS result: verdict=%s score=%s",
         run_id,
         evaluation["verdict"],
         evaluation["score"],
@@ -57,5 +56,4 @@ async def run_judge_chain(
         "verdict": evaluation["verdict"],
         "score": evaluation["score"],
         "retries": 0,
-        "judge_feedback": evaluation["feedback"],
     }

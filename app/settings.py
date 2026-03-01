@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # Judge settings
     max_judge_retries: int = Field(default=2)
 
+    # RAGAS evaluation
+    ragas_response_relevancy_threshold: float = Field(default=0.7)
+
     # Config file paths
     models_config_path: str = Field(default="/config/models.yaml")
     judge_rules_path: str = Field(default="/config/judge_rules.yaml")

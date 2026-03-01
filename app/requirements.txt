@@ -6,7 +6,10 @@ langchain-openai>=0.3
 pyyaml>=6.0
 pydantic-settings>=2.0
 
-# Phase 3: Judge chain (no additional deps needed)
+# Phase 3B: RAGAS Response Relevancy evaluation
+ragas>=0.2,<0.3
+sentence-transformers>=3.0
+langchain-community>=0.3
 
 # Phase 4: RAG — uncomment when implementing
 # langchain-community>=0.3
