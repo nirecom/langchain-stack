@@ -6,7 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compatible API. Currently in **Phase 2** (reasoner passthrough via LiteLLM Proxy; no judge evaluation yet).
 
-## Architecture
+## Overall Architecture Documents (via additionalDirectories)
+
+Read these files at the start of every implementation session:
+- ../ai-specs/projects/engineering/langchain-design.md
+- ../ai-specs/projects/engineering/langchain-setup-progress.md
+
+Do NOT read files outside of ../ai-specs/projects/engineering/.
+ai-specs is a PRIVATE repository — never reference its content
+in commits to this public repository.
+
+## LangChain Architecture
 
 ```
 Clients ──→ langchain-api:8100 (FastAPI) ──→ LiteLLM Proxy (LAN) ──→ llama-swap models
