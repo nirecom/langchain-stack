@@ -77,3 +77,30 @@ curl http://localhost:8100/v1/chat/completions \
 | 3B | Current | RAGAS Response Relevancy quantitative scoring |
 | 3C | Next | Judge feedback + retry loop |
 | 4 | Future | RAG: ChromaDB ingestion + vector search retrieval |
+
+## Phase Lifecycle
+
+### Starting a Phase
+
+1. Read the handoff document `.context-private/handoff-phase{N}.md`
+2. Read the previous phase completion report `.context-private/completion-phase{prev}.md`
+3. Read PJ global docs (listed in "Overall Architecture Documents" above) + this `CLAUDE.md`
+4. Cross-check handoff against higher-priority documents for contradictions:
+   - **Priority 1 (PJ global docs)**: `langchain-design.md`, `langchain-setup-progress.md`, `CLAUDE.md` — these may have been updated after the handoff was written. On conflict, PJ global docs win.
+   - **Priority 2**: Previous phase completion report (`completion-phase{prev}.md`)
+   - **Priority 3**: Current handoff (`handoff-phase{N}.md`)
+5. If a conflict cannot be resolved by priority alone, ask the user — do not decide independently
+6. Present corrections and plan before writing code
+
+### Completing a Phase
+
+1. Verify all completion criteria from the handoff document
+2. Update the Implementation Phases table in this file
+3. Create `.context-private/completion-phase{N}.md` containing:
+   - Completed work (files changed per commit)
+   - Verification results
+   - Corrections applied to handoff
+   - Current system state (API format, config, etc.)
+   - Notes and warnings for the next phase
+4. Update PJ global docs: checklist in `langchain-design.md`, progress in `langchain-setup-progress.md`
+5. Commit to develop branch and push
