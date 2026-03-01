@@ -3,8 +3,9 @@ Judge LLM chain — evaluates Reasoner output quality.
 
 Phase 3A: Returns verdict (PASS/FAIL), score (1-5), and feedback.
 Phase 3B: Verdict/score replaced by RAGAS Response Relevancy.
-          This module is NOT called in 3B but retained for 3C (feedback generation).
-Phase 3C: Reactivated for feedback-only generation on FAIL.
+          evaluate_answer() retained but dormant.
+Phase 3C: generate_feedback() active — called on RAGAS FAIL to produce
+          actionable feedback for Reasoner retry.
 """
 import logging
 from langchain_core.prompts import ChatPromptTemplate
@@ -66,3 +67,51 @@ async def evaluate_answer(question: str, answer: str) -> dict:
         logger.error("Judge evaluation failed: %s", e)
         # On judge failure, default to PASS to avoid blocking the user
         return {"verdict": "PASS", "score": 0, "feedback": f"Judge error: {e}"}
+
+
+# --- Phase 3C: feedback-only generation ---
+
+FEEDBACK_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """You are a quality improvement advisor.
+The following answer was evaluated and scored poorly on Response Relevancy
+(how well the answer addresses the original question).
+
+Analyze why the answer may not be relevant and provide specific,
+actionable feedback for improvement.
+
+Respond ONLY in valid JSON:
+{{
+  "feedback": "specific instructions for improving the answer's relevance to the question"
+}}"""),
+    ("human", """Question: {question}
+
+Answer that needs improvement:
+{answer}
+
+Response Relevancy score: {score} (threshold: {threshold})"""),
+])
+
+
+async def generate_feedback(
+    question: str, answer: str, score: float, threshold: float
+) -> str:
+    """
+    Generate improvement feedback using Judge LLM (Phase 3C).
+    Called only when RAGAS score indicates FAIL.
+    """
+    judge = get_judge()
+    chain = FEEDBACK_PROMPT | judge | JsonOutputParser()
+
+    try:
+        result = await chain.ainvoke({
+            "question": question,
+            "answer": answer,
+            "score": f"{score:.4f}",
+            "threshold": f"{threshold:.2f}",
+        })
+        feedback = result.get("feedback", "Please provide a more relevant answer.")
+        logger.info("Judge feedback generated (%d chars)", len(feedback))
+        return feedback
+    except Exception as e:
+        logger.error("Judge feedback generation failed: %s", e)
+        return "Please provide a more direct and relevant answer to the question."
