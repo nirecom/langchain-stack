@@ -67,5 +67,6 @@ async def chat_completions(request: ChatRequest):
             "judge_verdict": result["verdict"],
             "response_relevancy": result["score"],
             "retries": result["retries"],
+            "judge_feedback": result.get("judge_feedback", ""),
         },
     }
