@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compatible API. Currently in **Phase 3B** (RAGAS Response Relevancy quantitative scoring).
+LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compatible API. Currently in **Phase 3D** (Judge evaluation visibility in open-webui).
 
 ## Overall Architecture Documents (via additionalDirectories)
 
@@ -55,6 +55,7 @@ curl http://localhost:8100/v1/chat/completions \
 - **RAGAS Evaluation**: `app/evaluation/metrics.py` — RAGAS Response Relevancy scorer (Judge LLM for question generation + ruri embeddings for similarity)
 - **RAG Retriever**: `app/rag/retriever.py` — ChromaDB stub for Phase 4
 - **API**: `app/main.py` — FastAPI with `/health` and `/v1/chat/completions` (OpenAI-compatible format with added `metadata` field for judge verdict/score)
+- **Evaluation Visibility**: `app/main.py` `format_judge_evaluation()` — Appends collapsible `<details>` section with per-attempt scores/verdicts to response content (Phase 3D)
 
 ## Configuration
 
@@ -77,6 +78,8 @@ curl http://localhost:8100/v1/chat/completions \
 | 3A | Done | Reasoner → Judge LLM evaluation (no retry) |
 | 3B | Done | RAGAS Response Relevancy quantitative scoring |
 | 3C | Done | Judge feedback + retry loop |
+| 3D | Done | Judge evaluation visibility in response content |
+| 3E | Next | SSE streaming for real-time evaluation progress |
 | 4 | Future | RAG: ChromaDB ingestion + vector search retrieval |
 
 ## Phase Lifecycle

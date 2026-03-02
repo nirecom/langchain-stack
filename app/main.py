@@ -8,6 +8,35 @@ from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain
 from rag.retriever import get_relevant_context
 
+def format_judge_evaluation(result: dict) -> str:
+    """Format judge evaluation history as a collapsible <details> section."""
+    verdict = result["verdict"]
+    score = result["score"]
+    threshold = result.get("threshold", 0.0)
+    retries = result["retries"]
+    attempts = result.get("attempts", [])
+
+    summary = f"Judge Evaluation: {verdict} ({score:.2f})"
+
+    rows = [
+        "| Attempt | Score | Verdict | Feedback |",
+        "|---------|-------|---------|----------|",
+    ]
+    for a in attempts:
+        fb = a["feedback"].replace("|", "\\|")
+        if len(fb) > 200 and fb != "-":
+            fb = fb[:197] + "..."
+        rows.append(f"| {a['attempt']} | {a['score']:.2f} | {a['verdict']} | {fb} |")
+
+    table = "\n".join(rows)
+    footer = f"Threshold: {threshold:.2f} | Retries: {retries}"
+
+    return (
+        f"\n\n---\n\n<details>\n<summary>{summary}</summary>\n\n"
+        f"{table}\n\n{footer}\n</details>"
+    )
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -59,7 +88,7 @@ async def chat_completions(request: ChatRequest):
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": result["final_answer"],
+                "content": result["final_answer"] + format_judge_evaluation(result),
             },
             "finish_reason": "stop",
         }],

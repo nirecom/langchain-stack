@@ -40,6 +40,7 @@ async def run_judge_chain(
     answer = None
     evaluation = {}
     feedback = ""
+    attempts_history = []
 
     for attempt in range(max_retries + 1):
         # Step 1: Generate answer (with feedback if retrying)
@@ -77,6 +78,12 @@ async def run_judge_chain(
         )
 
         if evaluation["verdict"] == "PASS":
+            attempts_history.append({
+                "attempt": attempt + 1,
+                "score": evaluation["score"],
+                "verdict": "PASS",
+                "feedback": "-",
+            })
             break
 
         # Step 3: On FAIL, generate feedback (skip on last attempt)
@@ -87,10 +94,23 @@ async def run_judge_chain(
                 score=evaluation["score"],
                 threshold=evaluation["threshold"],
             )
+            attempts_history.append({
+                "attempt": attempt + 1,
+                "score": evaluation["score"],
+                "verdict": "FAIL",
+                "feedback": feedback,
+            })
             logger.info(
                 "[%s] attempt=%d FAIL — retrying with feedback",
                 run_id, attempt,
             )
+        else:
+            attempts_history.append({
+                "attempt": attempt + 1,
+                "score": evaluation["score"],
+                "verdict": "FAIL",
+                "feedback": "-",
+            })
 
     return {
         "run_id": run_id,
@@ -99,4 +119,6 @@ async def run_judge_chain(
         "score": evaluation.get("score", 0.0),
         "retries": attempt,
         "judge_feedback": feedback,
+        "attempts": attempts_history,
+        "threshold": evaluation.get("threshold", 0.0),
     }
