@@ -84,6 +84,8 @@ curl http://localhost:8100/v1/chat/completions \
 
 ## Phase Lifecycle
 
+> Canonical rules: `../ai-specs/CLAUDE.md` § "LangChain Project: Phase Workflow"
+
 ### Starting a Phase
 
 1. Read the handoff document `.context-private/handoff-phase{N}.md`
