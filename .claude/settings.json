@@ -4,5 +4,17 @@
   ],
   "env": {
     "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "pattern": "git commit",
+        "hook": {
+          "type": "command",
+          "command": "echo '[POST-COMMIT REMINDER] Run /complete-langchain-task to update ai-specs docs.'"
+        }
+      }
+    ]
   }
 }

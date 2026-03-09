@@ -9,8 +9,8 @@ LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compa
 ## Overall Architecture Documents (via additionalDirectories)
 
 Read these files at the start of every implementation session:
-- ../ai-specs/projects/engineering/langchain-design.md
-- ../ai-specs/projects/engineering/langchain-setup-progress.md
+- ../ai-specs/projects/engineering/langchain/architecture.md
+- ../ai-specs/projects/engineering/langchain/progress.md
 
 Do NOT read files outside of ../ai-specs/projects/engineering/.
 ai-specs is a PRIVATE repository — never reference its content
@@ -74,3 +74,17 @@ curl http://localhost:8100/v1/chat/completions \
 | 2 | Current | Reasoner passthrough, no judge evaluation |
 | 3 | Next | Judge evaluation + retry loop |
 | 4 | Future | RAG: ChromaDB ingestion + vector search retrieval |
+
+## Phase Lifecycle
+
+> Canonical rules: `../ai-specs/CLAUDE.md` § "LangChain Project: Phase Workflow"
+
+Use `/start-langchain-task {ID}` to begin and `/complete-langchain-task {ID}` to finish.
+Phase handoffs and completion reports are stored in `.context-private/`.
+
+### Conflict resolution
+
+- **Priority 1**: PJ global docs (`architecture.md`, `progress.md`, `CLAUDE.md`) — on conflict, these win
+- **Priority 2**: Previous phase completion report
+- **Priority 3**: Current handoff document
+- If unresolvable by priority, ask the user
