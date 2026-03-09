@@ -9,8 +9,8 @@ LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compa
 ## Overall Architecture Documents (via additionalDirectories)
 
 Read these files at the start of every implementation session:
-- ../ai-specs/projects/engineering/langchain-design.md
-- ../ai-specs/projects/engineering/langchain-setup-progress.md
+- ../ai-specs/projects/engineering/langchain/architecture.md
+- ../ai-specs/projects/engineering/langchain/progress.md
 
 Do NOT read files outside of ../ai-specs/projects/engineering/.
 ai-specs is a PRIVATE repository — never reference its content
@@ -86,27 +86,12 @@ curl http://localhost:8100/v1/chat/completions \
 
 > Canonical rules: `../ai-specs/CLAUDE.md` § "LangChain Project: Phase Workflow"
 
-### Starting a Phase
+Use `/start-langchain-task {ID}` to begin and `/complete-langchain-task {ID}` to finish.
+Phase handoffs and completion reports are stored in `.context-private/`.
 
-1. Read the handoff document `.context-private/handoff-phase{N}.md`
-2. Read the previous phase completion report `.context-private/completion-phase{prev}.md`
-3. Read PJ global docs (listed in "Overall Architecture Documents" above) + this `CLAUDE.md`
-4. Cross-check handoff against higher-priority documents for contradictions:
-   - **Priority 1 (PJ global docs)**: `langchain-design.md`, `langchain-setup-progress.md`, `CLAUDE.md` — these may have been updated after the handoff was written. On conflict, PJ global docs win.
-   - **Priority 2**: Previous phase completion report (`completion-phase{prev}.md`)
-   - **Priority 3**: Current handoff (`handoff-phase{N}.md`)
-5. If a conflict cannot be resolved by priority alone, ask the user — do not decide independently
-6. Present corrections and plan before writing code
+### Conflict resolution
 
-### Completing a Phase
-
-1. Verify all completion criteria from the handoff document
-2. Update the Implementation Phases table in this file
-3. Create `.context-private/completion-phase{N}.md` containing:
-   - Completed work (files changed per commit)
-   - Verification results
-   - Corrections applied to handoff
-   - Current system state (API format, config, etc.)
-   - Notes and warnings for the next phase
-4. Update PJ global docs: checklist in `langchain-design.md`, progress in `langchain-setup-progress.md`
-5. Commit to develop branch and push
+- **Priority 1**: PJ global docs (`architecture.md`, `progress.md`, `CLAUDE.md`) — on conflict, these win
+- **Priority 2**: Previous phase completion report
+- **Priority 3**: Current handoff document
+- If unresolvable by priority, ask the user
