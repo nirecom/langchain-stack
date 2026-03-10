@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compatible API. Currently in **Phase 3D** (Judge evaluation visibility in open-webui).
+LLM-as-a-Judge orchestration system with RAG support, exposed as an OpenAI-compatible API. Currently in **Phase 3E** (SSE streaming for real-time evaluation progress).
 
 ## Overall Architecture Documents (via additionalDirectories)
 
@@ -56,6 +56,7 @@ curl http://localhost:8100/v1/chat/completions \
 - **RAG Retriever**: `app/rag/retriever.py` — ChromaDB stub for Phase 4
 - **API**: `app/main.py` — FastAPI with `/health` and `/v1/chat/completions` (OpenAI-compatible format with added `metadata` field for judge verdict/score)
 - **Evaluation Visibility**: `app/main.py` `format_judge_evaluation()` — Appends collapsible `<details>` section with per-attempt scores/verdicts to response content (Phase 3D)
+- **SSE Streaming**: `app/chains/llm_as_judge.py` `run_judge_chain_stream()` — Async generator yielding status/token/evaluation events; `app/main.py` `_stream_response()` formats as OpenAI chat.completion.chunk SSE (Phase 3E)
 
 ## Configuration
 
@@ -79,7 +80,7 @@ curl http://localhost:8100/v1/chat/completions \
 | 3B | Done | RAGAS Response Relevancy quantitative scoring |
 | 3C | Done | Judge feedback + retry loop |
 | 3D | Done | Judge evaluation visibility in response content |
-| 3E | Next | SSE streaming for real-time evaluation progress |
+| 3E | Done | SSE streaming for real-time evaluation progress |
 | 4 | Future | RAG: ChromaDB ingestion + vector search retrieval |
 
 ## Phase Lifecycle
