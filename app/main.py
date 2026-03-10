@@ -62,7 +62,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     model: str = "judge-chain"
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(min_length=1)
     temperature: float = 0.7
     stream: bool = False
     use_rag: bool = Field(default=True, description="Enable RAG context retrieval")

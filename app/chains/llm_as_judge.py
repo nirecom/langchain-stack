@@ -168,7 +168,7 @@ async def run_judge_chain_stream(
             prompt, context, attempt, evaluation, feedback
         )
 
-        yield {"type": "status", "text": f"> ⏳ Generating answer (attempt {attempt + 1})...\n\n"}
+        yield {"type": "status", "text": f"⏳ Generating answer (attempt {attempt + 1})...\n\n"}
 
         if is_last_attempt:
             # Last attempt: stream tokens since this answer will be used regardless
@@ -190,7 +190,7 @@ async def run_judge_chain_stream(
         )
 
         # RAGAS evaluation (always non-streamed)
-        yield {"type": "status", "text": "> ⏳ Evaluating response relevancy...\n\n"}
+        yield {"type": "status", "text": "⏳ Evaluating response relevancy...\n\n"}
         evaluation = await compute_response_relevancy(
             question=prompt, answer=answer
         )
@@ -217,9 +217,9 @@ async def run_judge_chain_stream(
             yield {
                 "type": "status",
                 "text": (
-                    f"> ⏳ Response Relevancy: {evaluation['score']:.2f}"
+                    f"⏳ Response Relevancy: {evaluation['score']:.2f}"
                     f" — FAIL (threshold: {evaluation['threshold']:.2f})\n"
-                    f"> ⏳ Generating feedback and retrying...\n\n"
+                    f"⏳ Generating feedback and retrying...\n\n"
                 ),
             }
             feedback = await generate_feedback(
@@ -242,7 +242,7 @@ async def run_judge_chain_stream(
             yield {
                 "type": "status",
                 "text": (
-                    f"> ⚠️ Response Relevancy: {evaluation['score']:.2f}"
+                    f"⚠️ Response Relevancy: {evaluation['score']:.2f}"
                     f" — FAIL (max retries reached)\n\n"
                 ),
             }
