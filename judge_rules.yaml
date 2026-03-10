@@ -1,0 +1,46 @@
+# Judge evaluation rules for LLM-as-a-Judge chain.
+#
+# Metric names MUST match the common metrics standard defined in
+# langchain-design.md §1.1 — no abbreviations or custom names allowed.
+#
+# Phase 3: Response Relevancy only (no RAG context available)
+# Phase 4: Add Faithfulness, Context Precision, Context Recall
+
+# ==============================================================
+# Profile: default (Phase 3 — no RAG context)
+# ==============================================================
+default:
+  description: "Phase 3 evaluation using RAGAS Response Relevancy"
+  metrics:
+    response_relevancy:
+      enabled: true
+      # Number of artificial questions to reverse-generate from the answer.
+      # RAGAS default is 3. Higher values improve stability but cost more LLM calls.
+      strictness: 3
+      pass_threshold: 0.7
+  # Feedback prompt injected into Judge LLM when RAGAS score is below threshold.
+  # Only used for generating retry guidance — NOT for PASS/FAIL decision.
+  feedback_criteria:
+    - "Response Relevancy: Does the answer directly address the question without unnecessary tangents?"
+    - "Completeness: Are all parts of the question answered?"
+    - "Conciseness: Does the answer avoid redundant or irrelevant information?"
+
+# ==============================================================
+# Profile: rag (Phase 4 — with retrieved context)
+# ==============================================================
+rag:
+  description: "Phase 4 evaluation with RAG context (placeholder)"
+  metrics:
+    response_relevancy:
+      enabled: true
+      strictness: 3
+      pass_threshold: 0.7
+    faithfulness:
+      enabled: true
+      pass_threshold: 0.8
+    # context_precision and context_recall to be added in Phase 4
+  feedback_criteria:
+    - "Faithfulness: Is the answer grounded in the provided context?"
+    - "Response Relevancy: Does the answer directly address the question?"
+    - "Completeness: Does the answer use all relevant information from context?"
+    - "No Hallucination: Does the answer avoid claims not supported by context?"

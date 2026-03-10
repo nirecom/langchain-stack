@@ -11,9 +11,13 @@ services:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
       - MAX_JUDGE_RETRIES=${MAX_JUDGE_RETRIES:-2}
+      - RAGAS_RESPONSE_RELEVANCY_THRESHOLD=${RAGAS_RESPONSE_RELEVANCY_THRESHOLD:-0.7}
+      - RAGAS_DO_NOT_TRACK=true
+      - HF_HOME=/data/hf_cache
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents
+      - ./data/hf_cache:/data/hf_cache
     depends_on:
       chromadb:
         condition: service_started
