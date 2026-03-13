@@ -2,15 +2,20 @@
 LangChain API Server — OpenAI-compatible endpoint.
 Exposes LLM-as-a-Judge chain via /v1/chat/completions.
 Phase 3E: SSE streaming support.
+Phase 4A: Ingestion endpoints.
 """
 import json
 import logging
+import tempfile
 import time
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain, run_judge_chain_stream
 from rag.retriever import get_relevant_context
+from rag.ingest import ingest_file, ingest_folder, delete_collection, SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -190,3 +195,60 @@ async def chat_completions(request: ChatRequest):
             "judge_feedback": result.get("judge_feedback", ""),
         },
     }
+
+
+# --- Phase 4A: Ingestion endpoints ---
+
+
+@app.post("/ingest")
+async def ingest_upload(
+    file: UploadFile = File(...),
+    datasource: str = Form(...),
+):
+    """Ingest a single file into a datasource collection."""
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {suffix}. Supported: {sorted(SUPPORTED_EXTENSIONS)}",
+        )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        chunk_count = ingest_file(tmp_path, datasource)
+        return {
+            "status": "ok",
+            "filename": file.filename,
+            "datasource": datasource,
+            "chunks": chunk_count,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@app.post("/ingest/batch")
+async def ingest_batch(datasource: str = Form(...)):
+    """Ingest all supported files in data/documents/{datasource}/."""
+    try:
+        result = ingest_folder(datasource)
+        return {"status": "ok", "datasource": datasource, **result}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/ingest/{datasource}")
+async def ingest_delete(datasource: str):
+    """Delete a datasource collection from ChromaDB."""
+    try:
+        delete_collection(datasource)
+        return {"status": "ok", "datasource": datasource, "action": "deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
