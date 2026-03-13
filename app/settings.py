@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # RAGAS evaluation
     ragas_response_relevancy_threshold: float = Field(default=0.7)
 
+    # Embedding model
+    embedding_model_name: str = Field(default="cl-nagoya/ruri-v3-310m")
+
     # Config file paths
     models_config_path: str = Field(default="/config/models.yaml")
     judge_rules_path: str = Field(default="/config/judge_rules.yaml")

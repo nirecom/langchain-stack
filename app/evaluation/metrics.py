@@ -18,33 +18,21 @@ from ragas import SingleTurnSample
 from ragas.metrics import ResponseRelevancy
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from models.provider import get_judge
+from models.embeddings import get_embeddings
 from settings import settings
 
 logger = logging.getLogger(__name__)
 
 # Lazy initialization (model download happens on first call)
-_embeddings = None
 _metric = None
-
-
-def _get_embeddings():
-    global _embeddings
-    if _embeddings is None:
-        _embeddings = HuggingFaceEmbeddings(
-            model_name="cl-nagoya/ruri-v3-310m",
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
-    return _embeddings
 
 
 def _get_metric():
     global _metric
     if _metric is None:
         judge_llm = LangchainLLMWrapper(get_judge())
-        embeddings = LangchainEmbeddingsWrapper(_get_embeddings())
+        embeddings = LangchainEmbeddingsWrapper(get_embeddings())
         _metric = ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
     return _metric
 
