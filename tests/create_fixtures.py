@@ -7,7 +7,7 @@ This script is temporary — delete after Phase 4A testing is complete.
 """
 from pathlib import Path
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parent / "fixtures-phase4a"
 
 
 def create_pdf():
