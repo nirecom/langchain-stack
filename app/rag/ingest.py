@@ -87,13 +87,14 @@ def _split_documents(documents):
     return splitter.split_documents(documents)
 
 
-def ingest_file(file_path: Path, datasource: str) -> int:
+def ingest_file(file_path: Path, datasource: str, *, original_filename: str | None = None) -> int:
     """
     Ingest a single file into ChromaDB.
 
     Args:
         file_path: Path to the file to ingest
         datasource: Target datasource (ChromaDB collection name)
+        original_filename: Original filename for metadata (uses file_path.name if omitted)
 
     Returns:
         Number of chunks stored
@@ -101,21 +102,21 @@ def ingest_file(file_path: Path, datasource: str) -> int:
     if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ValueError(f"Unsupported file extension: {file_path.suffix}")
 
-    logger.info("Ingesting %s into datasource '%s'", file_path.name, datasource)
+    source_name = original_filename or file_path.name
+    logger.info("Ingesting %s into datasource '%s'", source_name, datasource)
 
     documents = _load_documents(file_path)
     if not documents:
-        logger.warning("No content extracted from %s", file_path.name)
+        logger.warning("No content extracted from %s", source_name)
         return 0
 
     chunks = _split_documents(documents)
     if not chunks:
-        logger.warning("No chunks after splitting %s", file_path.name)
+        logger.warning("No chunks after splitting %s", source_name)
         return 0
 
     collection = get_or_create_collection(datasource)
     embeddings = get_embeddings()
-    source_name = file_path.name
     now = datetime.now(timezone.utc).isoformat()
 
     # Delete existing chunks for this file (duplicate ingestion handling)
@@ -182,6 +183,32 @@ def ingest_folder(datasource: str) -> dict:
         "files_processed": files_processed,
         "errors": errors,
     }
+
+
+def list_files(datasource: str) -> list[dict]:
+    """List unique filenames and their chunk counts in a datasource."""
+    from collections import Counter
+    from models.chroma import get_chroma_client
+
+    client = get_chroma_client()
+    collection = client.get_collection(name=datasource)
+    result = collection.get(include=["metadatas"])
+    counts = Counter(m["source"] for m in result["metadatas"])
+    return [{"filename": name, "chunk_count": cnt} for name, cnt in sorted(counts.items())]
+
+
+def delete_file(datasource: str, filename: str) -> int:
+    """Delete all chunks for a specific file from a datasource. Returns deleted count."""
+    from models.chroma import get_chroma_client
+
+    client = get_chroma_client()
+    collection = client.get_collection(name=datasource)
+    existing = collection.get(where={"source": filename})
+    if not existing["ids"]:
+        raise ValueError(f"No chunks found for '{filename}' in '{datasource}'")
+    collection.delete(ids=existing["ids"])
+    logger.info("Deleted %d chunks for '%s' from '%s'", len(existing["ids"]), filename, datasource)
+    return len(existing["ids"])
 
 
 def delete_collection(datasource: str) -> bool:

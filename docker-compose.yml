@@ -42,6 +42,18 @@ services:
     networks:
       - langchain-net
 
+  chromadb-admin:
+    image: chromadb-admin:local
+    container_name: chromadb-admin
+    ports:
+      - "${CHROMA_ADMIN_PORT:-3001}:3001"
+    depends_on:
+      chromadb:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
 networks:
   langchain-net:
     driver: bridge

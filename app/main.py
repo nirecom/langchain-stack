@@ -15,7 +15,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain, run_judge_chain_stream
 from rag.retriever import get_relevant_context
-from rag.ingest import ingest_file, ingest_folder, delete_collection, SUPPORTED_EXTENSIONS
+import chromadb.errors
+from rag.ingest import (
+    ingest_file, ingest_folder, delete_collection,
+    list_files, delete_file, SUPPORTED_EXTENSIONS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +223,7 @@ async def ingest_upload(
         tmp_path = Path(tmp.name)
 
     try:
-        chunk_count = ingest_file(tmp_path, datasource)
+        chunk_count = ingest_file(tmp_path, datasource, original_filename=file.filename)
         return {
             "status": "ok",
             "filename": file.filename,
@@ -252,3 +256,25 @@ async def ingest_delete(datasource: str):
         return {"status": "ok", "datasource": datasource, "action": "deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ingest/{datasource}")
+async def ingest_detail(datasource: str):
+    """List files in a datasource with per-file chunk counts."""
+    try:
+        files = list_files(datasource)
+        return {"datasource": datasource, "files": files}
+    except chromadb.errors.NotFoundError:
+        raise HTTPException(status_code=404, detail=f"Datasource '{datasource}' not found")
+
+
+@app.delete("/ingest/{datasource}/{filename:path}")
+async def ingest_delete_file(datasource: str, filename: str):
+    """Delete all chunks for a specific file from a datasource."""
+    try:
+        deleted = delete_file(datasource, filename)
+        return {"status": "ok", "datasource": datasource, "filename": filename, "deleted_chunks": deleted}
+    except chromadb.errors.NotFoundError:
+        raise HTTPException(status_code=404, detail=f"Datasource '{datasource}' not found")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
