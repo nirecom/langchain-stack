@@ -15,9 +15,26 @@ def _load_yaml(path: str) -> dict:
 
 
 class Settings(BaseSettings):
-    # LiteLLM Proxy (the ONLY LLM endpoint this app talks to)
+    # LiteLLM Proxy (fallback when all direct endpoints are down)
     litellm_proxy_url: str = Field(default="http://litellm-proxy:4000/v1")
     litellm_api_key: str = Field(default="not-needed")
+
+    # Direct endpoint URLs
+    llama_server_url: str = Field(default="")
+    portable_llm_server_url: str = Field(default="")
+    cloud_api_url: str = Field(default="")
+    cloud_api_key: str = Field(default="")
+
+    # Direct endpoint model names (per role)
+    reasoner_local_model: str = Field(default="")
+    reasoner_portable_model: str = Field(default="")
+    reasoner_cloud_model: str = Field(default="")
+    judge_local_model: str = Field(default="")
+    judge_portable_model: str = Field(default="")
+    judge_cloud_model: str = Field(default="")
+
+    # Health probe
+    health_probe_timeout: float = Field(default=2.0)
 
     # ChromaDB
     chroma_host: str = Field(default="chromadb")

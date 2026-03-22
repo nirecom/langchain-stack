@@ -24,9 +24,8 @@ from settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Lazy initialization (model download happens on first call)
+# Lazy initialization (embedding model download happens on first call)
 _embeddings = None
-_metric = None
 
 
 def _get_embeddings():
@@ -41,12 +40,10 @@ def _get_embeddings():
 
 
 def _get_metric():
-    global _metric
-    if _metric is None:
-        judge_llm = LangchainLLMWrapper(get_judge())
-        embeddings = LangchainEmbeddingsWrapper(_get_embeddings())
-        _metric = ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
-    return _metric
+    """Build metric fresh each call (judge endpoint may change after probe)."""
+    judge_llm = LangchainLLMWrapper(get_judge())
+    embeddings = LangchainEmbeddingsWrapper(_get_embeddings())
+    return ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
 
 
 async def compute_response_relevancy(question: str, answer: str) -> dict:

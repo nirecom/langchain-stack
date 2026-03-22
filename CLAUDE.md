@@ -17,7 +17,7 @@ in commits to this public repository.
 ## Key Architecture Decisions
 
 - **Settings**: `app/settings.py` — Pydantic Settings loads env vars + YAML configs (`config/models.yaml`, `config/judge_rules.yaml`) at startup
-- **LLM Provider Isolation**: All model instantiation in `app/models/provider.py` via `get_reasoner()`/`get_judge()` factory functions using LangChain's `ChatOpenAI`
+- **LLM Provider Isolation**: All model instantiation in `app/models/provider.py` via `get_reasoner()`/`get_judge()` factory functions using LangChain's `ChatOpenAI`. Direct endpoint fallback probes llama-swap before each chain, falling back to LiteLLM when all are down
 - **Orchestration**: `app/chains/llm_as_judge.py` — Reasoner → RAGAS Response Relevancy evaluation pipeline
 - **Judge Feedback**: `app/chains/judge.py` — `generate_feedback()` for FAIL retry
 - **RAGAS Evaluation**: `app/evaluation/metrics.py` — RAGAS Response Relevancy scorer (Judge LLM for question generation + ruri embeddings for similarity)

@@ -8,7 +8,7 @@ Phase 3E: SSE streaming variant (run_judge_chain_stream).
 import uuid
 import logging
 from collections.abc import AsyncGenerator
-from models.provider import get_reasoner
+from models.provider import get_reasoner, probe_endpoints
 from evaluation.metrics import compute_response_relevancy
 from chains.judge import generate_feedback
 from settings import settings as app_settings
@@ -57,6 +57,7 @@ async def run_judge_chain(
     Returns:
         dict with final_answer, verdict, score, retries, judge_feedback
     """
+    await probe_endpoints()
     max_retries = max_retries if max_retries is not None else app_settings.max_judge_retries
 
     run_id = str(uuid.uuid4())[:8]
@@ -151,6 +152,7 @@ async def run_judge_chain_stream(
         {"type": "token",  "text": "..."}      — answer tokens
         {"type": "evaluation", "result": {...}} — final metadata
     """
+    await probe_endpoints()
     max_retries = max_retries if max_retries is not None else app_settings.max_judge_retries
 
     run_id = str(uuid.uuid4())[:8]
