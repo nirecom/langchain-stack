@@ -22,7 +22,7 @@ judge:
   timeout: 60
   endpoints:
     local:
-      timeout: 15
+      timeout: 60
     portable:
       timeout: 10
     cloud:

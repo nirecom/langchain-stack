@@ -25,6 +25,7 @@ services:
       - RAGAS_RESPONSE_RELEVANCY_THRESHOLD=${RAGAS_RESPONSE_RELEVANCY_THRESHOLD:-0.7}
       - RAGAS_DO_NOT_TRACK=true
       - HF_HOME=/data/hf_cache
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents

@@ -150,6 +150,10 @@ def _get_llm_for_role(role: str, temperature: float | None = None) -> ChatOpenAI
             # Self-signed certs on local llama-swap
             if not ep["is_cloud"]:
                 kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
+                # Disable Qwen3 thinking mode — we only need the final answer
+                kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": False},
+                }
             return ChatOpenAI(**kwargs)
 
     # All direct endpoints dead or none configured -> LiteLLM fallback

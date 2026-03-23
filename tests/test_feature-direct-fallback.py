@@ -598,6 +598,46 @@ class TestEndpointConfig:
 
         assert llm.http_async_client is None
 
+    def test_local_endpoint_disables_thinking(self):
+        """Local endpoint gets extra_body with enable_thinking=False."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        health = provider.EndpointHealth()
+        with patch.object(provider, "_endpoint_health", health):
+            llm = provider._get_llm_for_role("reasoner")
+
+        assert llm.extra_body is not None
+        assert llm.extra_body["chat_template_kwargs"]["enable_thinking"] is False
+
+    def test_portable_endpoint_disables_thinking(self):
+        """Portable (non-cloud) endpoint also gets enable_thinking=False."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        health = provider.EndpointHealth()
+        health.mark_dead(LOCAL_URL)
+        with patch.object(provider, "_endpoint_health", health):
+            llm = provider._get_llm_for_role("reasoner")
+
+        base = getattr(llm, "openai_api_base", None) or str(llm.base_url)
+        assert PORTABLE_URL in base
+        assert llm.extra_body is not None
+        assert llm.extra_body["chat_template_kwargs"]["enable_thinking"] is False
+
+    def test_cloud_endpoint_no_extra_body(self):
+        """Cloud endpoint does not get extra_body (no thinking mode)."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        health = provider.EndpointHealth()
+        health.mark_dead(LOCAL_URL)
+        health.mark_dead(PORTABLE_URL)
+        with patch.object(provider, "_endpoint_health", health):
+            llm = provider._get_llm_for_role("reasoner")
+
+        assert llm.extra_body is None
+
 
 # ---------------------------------------------------------------------------
 # Lower priority: TTL boundary, string edge, single-endpoint config
