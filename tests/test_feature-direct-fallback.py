@@ -5,6 +5,7 @@ Tests the EndpointHealth, _build_endpoints, probe_endpoints, and
 _get_llm_for_role functions in app/models/provider.py.
 """
 
+import pathlib
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -858,3 +859,59 @@ class TestSingleEndpointConfig:
 
         # URL deduplication in probe_endpoints uses a set
         assert probed_urls.count(LOCAL_URL) == 1
+
+
+# ---------------------------------------------------------------------------
+# format_judge_evaluation tests
+# ---------------------------------------------------------------------------
+
+class TestFormatJudgeEvaluation:
+    """Tests for format_judge_evaluation in main.py."""
+
+    def _make_result(self, feedback="Good answer"):
+        return {
+            "verdict": "PASS",
+            "score": 0.85,
+            "final_answer": "test",
+            "threshold": 0.70,
+            "retries": 0,
+            "attempts": [
+                {"attempt": 0, "score": 0.85, "verdict": "PASS", "feedback": feedback},
+            ],
+        }
+
+    @staticmethod
+    def _import_format():
+        """Import format_judge_evaluation with app dependencies mocked."""
+        import importlib
+        import sys
+
+        # Mock heavy app dependencies so main.py can be imported
+        for mod in ("chains", "chains.llm_as_judge", "rag", "rag.retriever"):
+            if mod not in sys.modules:
+                sys.modules[mod] = MagicMock()
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "app"))
+        try:
+            mod = importlib.import_module("main")
+            return mod.format_judge_evaluation
+        finally:
+            sys.path.pop(0)
+
+    def test_string_feedback(self):
+        """Normal: feedback is a string."""
+        fmt = self._import_format()
+        output = fmt(self._make_result("Good answer"))
+        assert "Good answer" in output
+        assert "PASS" in output
+
+    def test_list_feedback(self):
+        """Error case: feedback is a list (from some RAGAS versions)."""
+        fmt = self._import_format()
+        output = fmt(self._make_result(["point 1", "point 2"]))
+        assert "point 1 point 2" in output
+
+    def test_empty_list_feedback(self):
+        """Edge: feedback is an empty list."""
+        fmt = self._import_format()
+        output = fmt(self._make_result([]))
+        assert "PASS" in output

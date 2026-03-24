@@ -30,7 +30,10 @@ def format_judge_evaluation(result: dict) -> str:
         "|---------|-------|---------|----------|",
     ]
     for a in attempts:
-        fb = a["feedback"].replace("|", "\\|")
+        fb = a["feedback"]
+        if isinstance(fb, list):
+            fb = " ".join(str(x) for x in fb)
+        fb = fb.replace("|", "\\|")
         if len(fb) > 200 and fb != "-":
             fb = fb[:197] + "..."
         rows.append(f"| {a['attempt']} | {a['score']:.2f} | {a['verdict']} | {fb} |")
