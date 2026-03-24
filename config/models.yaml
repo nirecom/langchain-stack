@@ -7,9 +7,24 @@ reasoner:
   litellm_model_name: "reasoner"
   temperature: 0.7
   timeout: 120
+  endpoints:
+    local:
+      timeout: 120
+    portable:
+      timeout: 30
+    cloud:
+      timeout: 60
 
 judge:
   description: "Evaluation model for quality assessment"
   litellm_model_name: "judge"
   temperature: 0.0
   timeout: 60
+  endpoint_order: [portable, local, cloud]
+  endpoints:
+    local:
+      timeout: 60
+    portable:
+      timeout: 15
+    cloud:
+      timeout: 30
