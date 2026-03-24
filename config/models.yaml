@@ -20,10 +20,11 @@ judge:
   litellm_model_name: "judge"
   temperature: 0.0
   timeout: 60
+  endpoint_order: [portable, local, cloud]
   endpoints:
     local:
       timeout: 60
     portable:
-      timeout: 10
+      timeout: 15
     cloud:
       timeout: 30

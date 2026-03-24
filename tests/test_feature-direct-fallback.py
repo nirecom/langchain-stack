@@ -136,6 +136,120 @@ class TestBuildEndpoints:
         endpoints = provider._build_endpoints("judge")
         assert len(endpoints) == 3
 
+    def test_endpoint_order_from_config(self):
+        """endpoint_order in models.yaml overrides default order."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        # Simulate judge config with portable-first order
+        judge_cfg = {
+            "judge": {
+                "litellm_model_name": "judge", "temperature": 0.0, "timeout": 60,
+                "endpoint_order": ["portable", "local", "cloud"],
+                "endpoints": {
+                    "local": {"timeout": 60},
+                    "portable": {"timeout": 15},
+                    "cloud": {"timeout": 30},
+                },
+            }
+        }
+        with patch.object(
+            type(provider.settings), "models",
+            new_callable=lambda: property(lambda self: judge_cfg),
+        ):
+            endpoints = provider._build_endpoints("judge")
+
+        assert len(endpoints) == 3
+        # portable first, then local, then cloud
+        assert endpoints[0]["url"] == PORTABLE_URL
+        assert endpoints[1]["url"] == LOCAL_URL
+        assert endpoints[2]["url"] == CLOUD_URL
+
+    def test_default_order_without_endpoint_order(self):
+        """Without endpoint_order, default order (local, portable, cloud) is used."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        # Config without endpoint_order
+        reasoner_cfg = {
+            "reasoner": {
+                "litellm_model_name": "reasoner", "temperature": 0.7, "timeout": 120,
+                "endpoints": {
+                    "local": {"timeout": 120},
+                    "portable": {"timeout": 30},
+                    "cloud": {"timeout": 60},
+                },
+            }
+        }
+        with patch.object(
+            type(provider.settings), "models",
+            new_callable=lambda: property(lambda self: reasoner_cfg),
+        ):
+            endpoints = provider._build_endpoints("reasoner")
+
+        assert len(endpoints) == 3
+        assert endpoints[0]["url"] == LOCAL_URL
+        assert endpoints[1]["url"] == PORTABLE_URL
+        assert endpoints[2]["url"] == CLOUD_URL
+
+    def test_endpoint_order_invalid_slot_raises_keyerror(self):
+        """Invalid slot name in endpoint_order raises KeyError."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        bad_cfg = {
+            "judge": {
+                "litellm_model_name": "judge", "temperature": 0.0, "timeout": 60,
+                "endpoint_order": ["local", "unknown", "cloud"],
+            }
+        }
+        with patch.object(
+            type(provider.settings), "models",
+            new_callable=lambda: property(lambda self: bad_cfg),
+        ):
+            with pytest.raises(KeyError):
+                provider._build_endpoints("judge")
+
+    def test_endpoint_order_empty_list_no_endpoints(self):
+        """Empty endpoint_order produces an empty endpoint list."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        empty_cfg = {
+            "judge": {
+                "litellm_model_name": "judge", "temperature": 0.0, "timeout": 60,
+                "endpoint_order": [],
+            }
+        }
+        with patch.object(
+            type(provider.settings), "models",
+            new_callable=lambda: property(lambda self: empty_cfg),
+        ):
+            endpoints = provider._build_endpoints("judge")
+
+        assert endpoints == []
+
+    def test_endpoint_order_partial_skips_unspecified(self):
+        """Partial endpoint_order skips unspecified slots."""
+        with patch.dict("os.environ", FULL_ENV, clear=False):
+            provider = _import_provider()
+
+        partial_cfg = {
+            "judge": {
+                "litellm_model_name": "judge", "temperature": 0.0, "timeout": 60,
+                "endpoint_order": ["portable", "cloud"],
+            }
+        }
+        with patch.object(
+            type(provider.settings), "models",
+            new_callable=lambda: property(lambda self: partial_cfg),
+        ):
+            endpoints = provider._build_endpoints("judge")
+
+        assert len(endpoints) == 2
+        assert endpoints[0]["url"] == PORTABLE_URL
+        assert endpoints[1]["url"] == CLOUD_URL
+
     def test_openai_prefix_stripped(self):
         """The openai/ prefix is auto-stripped from model names."""
         with patch.dict("os.environ", FULL_ENV, clear=False):

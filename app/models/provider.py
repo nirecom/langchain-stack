@@ -48,12 +48,14 @@ _endpoint_health = EndpointHealth()
 
 # --- Endpoint list builder ---
 
-_ENDPOINT_DEFS = [
-    # (slot, url_attr, model_template, is_cloud)
-    ("local", "llama_server_url", "{role}_local_model", False),
-    ("portable", "portable_llm_server_url", "{role}_portable_model", False),
-    ("cloud", "cloud_api_url", "{role}_cloud_model", True),
-]
+_DEFAULT_ORDER = ["local", "portable", "cloud"]
+
+_ENDPOINT_MAP = {
+    # slot -> (url_attr, model_template, is_cloud)
+    "local":    ("llama_server_url",        "{role}_local_model",    False),
+    "portable": ("portable_llm_server_url", "{role}_portable_model", False),
+    "cloud":    ("cloud_api_url",           "{role}_cloud_model",    True),
+}
 
 
 def _build_endpoints(role: str) -> list[dict[str, Any]]:
@@ -61,8 +63,10 @@ def _build_endpoints(role: str) -> list[dict[str, Any]]:
     endpoints: list[dict[str, Any]] = []
     model_cfg = settings.models.get(role, {})
     ep_timeouts = model_cfg.get("endpoints", {})
+    order = model_cfg.get("endpoint_order", _DEFAULT_ORDER)
 
-    for slot, url_attr, model_tmpl, is_cloud in _ENDPOINT_DEFS:
+    for slot in order:
+        url_attr, model_tmpl, is_cloud = _ENDPOINT_MAP[slot]
         url = getattr(settings, url_attr, "")
         model_attr = model_tmpl.format(role=role)
         model = getattr(settings, model_attr, "")
