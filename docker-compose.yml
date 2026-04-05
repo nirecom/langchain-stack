@@ -26,6 +26,9 @@ services:
       - RAGAS_DO_NOT_TRACK=true
       - HF_HOME=/data/hf_cache
       - HF_HUB_OFFLINE=1
+      - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-cl-nagoya/ruri-v3-310m}
+      - INGEST_CHUNK_SIZE=${INGEST_CHUNK_SIZE:-1000}
+      - INGEST_CHUNK_OVERLAP=${INGEST_CHUNK_OVERLAP:-200}
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents
@@ -47,6 +50,18 @@ services:
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  chromadb-admin:
+    image: chromadb-admin:local
+    container_name: chromadb-admin
+    ports:
+      - "${CHROMA_ADMIN_PORT:-3001}:3001"
+    depends_on:
+      chromadb:
+        condition: service_started
     restart: unless-stopped
     networks:
       - langchain-net
