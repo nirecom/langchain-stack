@@ -211,6 +211,27 @@ def delete_file(datasource: str, filename: str) -> int:
     return len(existing["ids"])
 
 
+def dry_run_file(file_path: Path, *, original_filename: str | None = None) -> dict:
+    """Preview chunking without writing to ChromaDB."""
+    source_name = original_filename or file_path.name
+    documents = _load_documents(file_path)
+    if not documents:
+        return {"filename": source_name, "total_chunks": 0, "chunks": []}
+    chunks = _split_documents(documents)
+    return {
+        "filename": source_name,
+        "total_chunks": len(chunks),
+        "chunks": [
+            {
+                "chunk_index": i,
+                "char_count": len(chunk.page_content),
+                "preview": chunk.page_content[:200],
+            }
+            for i, chunk in enumerate(chunks)
+        ],
+    }
+
+
 def delete_collection(datasource: str) -> bool:
     """Delete a ChromaDB collection."""
     from models.chroma import get_chroma_client

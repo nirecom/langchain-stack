@@ -1,0 +1,19 @@
+# Access control configuration for datasource and model permissions.
+# Datasource names must match ChromaDB collection names exactly.
+# Only listed datasources are allowed — unlisted ones are rejected (default-deny).
+
+datasources:
+  datasource_a:
+    description: "Shared documents"
+  datasource_b:
+    description: "Restricted documents"
+  test-pytest:
+    description: "Test datasource for Phase 4A ingestion tests"
+  test-ds-mgmt:
+    description: "Test datasource for datasource management tests"
+
+models:
+  judge-chain:
+    datasources: [datasource_a]
+  judge-chain-full:
+    datasources: [datasource_a, datasource_b]

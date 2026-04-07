@@ -10,8 +10,13 @@ import pytest
 import httpx
 
 BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8100")
+INGEST_API_KEY = os.getenv("TEST_INGEST_API_KEY", "test-ingest-key")
 DATASOURCE = "test-pytest"
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures-phase4a")
+
+
+def _ingest_headers():
+    return {"Authorization": f"Bearer {INGEST_API_KEY}"}
 
 
 @pytest.fixture
@@ -38,7 +43,7 @@ def client():
 def cleanup(client):
     """Delete test datasource after each test."""
     yield
-    client.delete(f"/ingest/{DATASOURCE}")
+    client.delete(f"/ingest/{DATASOURCE}", headers=_ingest_headers())
 
 
 class TestHealth:
@@ -55,6 +60,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         body = r.json()
@@ -69,6 +75,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.md", fp, "text/markdown")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         assert r.json()["chunks"] >= 1
@@ -82,6 +89,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.pdf", fp, "application/pdf")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         assert r.json()["chunks"] >= 1
@@ -95,6 +103,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.xlsx", fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         assert r.json()["chunks"] >= 1
@@ -108,6 +117,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.pptx", fp, "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         assert r.json()["chunks"] >= 1
@@ -121,6 +131,7 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.docx", fp, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 200
         assert r.json()["chunks"] >= 1
@@ -132,12 +143,14 @@ class TestIngestUpload:
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         with open(os.path.join(FIXTURES_DIR, "sample.txt"), "rb") as fp:
             r2 = client.post(
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r1.json()["chunks"] == r2.json()["chunks"]
 
@@ -151,6 +164,7 @@ class TestIngestError:
                 "/ingest",
                 files={"file": ("bad.exe", fp, "application/octet-stream")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 400
         assert "Unsupported" in r.json()["detail"]
@@ -162,6 +176,7 @@ class TestIngestError:
             r = client.post(
                 "/ingest",
                 files={"file": ("no_ds.txt", fp, "text/plain")},
+                headers=_ingest_headers(),
             )
         assert r.status_code == 422
 
@@ -173,7 +188,8 @@ class TestIngestDelete:
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
                 data={"datasource": DATASOURCE},
+                headers=_ingest_headers(),
             )
-        r = client.delete(f"/ingest/{DATASOURCE}")
+        r = client.delete(f"/ingest/{DATASOURCE}", headers=_ingest_headers())
         assert r.status_code == 200
         assert r.json()["action"] == "deleted"

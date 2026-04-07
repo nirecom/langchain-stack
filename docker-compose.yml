@@ -29,10 +29,14 @@ services:
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-cl-nagoya/ruri-v3-310m}
       - INGEST_CHUNK_SIZE=${INGEST_CHUNK_SIZE:-1000}
       - INGEST_CHUNK_OVERLAP=${INGEST_CHUNK_OVERLAP:-200}
+      - INGEST_API_KEY=${INGEST_API_KEY:-}
+      - CHAT_API_KEY=${CHAT_API_KEY:-}
+      - AUDIT_LOG_PATH=${AUDIT_LOG_PATH:-/data/audit/ingest.jsonl}
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents
       - ./data/hf_cache:/data/hf_cache
+      - ./data/audit:/data/audit
     depends_on:
       chromadb:
         condition: service_started
@@ -44,7 +48,7 @@ services:
     image: chromadb/chroma:latest
     container_name: chromadb
     ports:
-      - "${CHROMA_PORT:-8200}:8000"
+      - "127.0.0.1:${CHROMA_PORT:-8200}:8000"
     volumes:
       - ./data/chroma:/chroma/chroma
     environment:
@@ -58,7 +62,7 @@ services:
     image: chromadb-admin:local
     container_name: chromadb-admin
     ports:
-      - "${CHROMA_ADMIN_PORT:-3001}:3001"
+      - "127.0.0.1:${CHROMA_ADMIN_PORT:-3001}:3001"
     depends_on:
       chromadb:
         condition: service_started

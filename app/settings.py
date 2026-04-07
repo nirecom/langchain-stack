@@ -56,10 +56,22 @@ class Settings(BaseSettings):
     # Config file paths
     models_config_path: str = Field(default="/config/models.yaml")
     judge_rules_path: str = Field(default="/config/judge_rules.yaml")
+    access_control_path: str = Field(default="/config/access_control.yaml")
+
+    # API keys (empty = auth disabled)
+    ingest_api_key: str = Field(default="")
+    chat_api_key: str = Field(default="")
+
+    # Audit log
+    audit_log_path: str = Field(default="/data/audit/ingest.jsonl")
 
     @property
     def models(self) -> dict:
         return _load_yaml(self.models_config_path)
+
+    @property
+    def access_control(self) -> dict:
+        return _load_yaml(self.access_control_path)
 
     @property
     def judge_criteria(self) -> str:
