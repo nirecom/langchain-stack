@@ -15,11 +15,10 @@ default:
   # retry_temperature: null  # Reserved for future use. When set, overrides
   #                          # reasoner temperature on retry attempts.
 
-# rag:
-#   description: "RAG-specific evaluation (Phase 4)"
-#   criteria:
-#     - "Faithfulness: Is the answer grounded in the provided context?"
-#     - "Accuracy: Does the answer correctly interpret the source material?"
-#     - "Completeness: Does the answer use all relevant information from context?"
-#     - "No Hallucination: Does the answer avoid claims not supported by context?"
-#   pass_threshold: 3
+rag:
+  description: "RAG-specific evaluation (Phase 4)"
+  criteria:
+    - "Faithfulness: Is the answer grounded in the provided context?"
+    - "Accuracy: Does the answer correctly interpret the source material?"
+    - "Completeness: Does the answer use all relevant information from context?"
+    - "No Hallucination: Does the answer avoid claims not supported by context?"

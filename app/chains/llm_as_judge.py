@@ -102,11 +102,16 @@ async def run_judge_chain(
 
         # On FAIL, generate feedback (skip on last attempt)
         if attempt < max_retries:
+            criteria = (
+                app_settings.rag_judge_criteria if context
+                else app_settings.judge_criteria
+            )
             feedback = await generate_feedback(
                 question=prompt,
                 answer=answer,
                 score=evaluation["score"],
                 threshold=evaluation["threshold"],
+                criteria=criteria,
             )
             attempts_history.append({
                 "attempt": attempt + 1,
@@ -224,11 +229,16 @@ async def run_judge_chain_stream(
                     f"⏳ Generating feedback and retrying...\n\n"
                 ),
             }
+            criteria = (
+                app_settings.rag_judge_criteria if context
+                else app_settings.judge_criteria
+            )
             feedback = await generate_feedback(
                 question=prompt,
                 answer=answer,
                 score=evaluation["score"],
                 threshold=evaluation["threshold"],
+                criteria=criteria,
             )
             attempts_history.append({
                 "attempt": attempt + 1,

@@ -18,7 +18,7 @@ from settings import settings
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls", ".txt", ".md", ".pptx", ".docx", ".doc"}
-DOCUMENT_PREFIX = "検索文書: "
+from models.embeddings import DOCUMENT_PREFIX
 
 
 def _load_documents(file_path: Path):

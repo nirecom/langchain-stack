@@ -33,6 +33,31 @@ def log_ingest_event(
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def log_retrieve_event(
+    model_name: str,
+    datasources_queried: list[str],
+    query: str,
+    hits: int,
+    *,
+    status: str = "ok",
+    error: str = "",
+) -> None:
+    path = Path(settings.audit_log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "action": "retrieve",
+        "model_name": model_name,
+        "datasources_queried": datasources_queried,
+        "query_length": len(query),
+        "hits": hits,
+        "status": status,
+        "error": error,
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 def get_recent_events(n: int = 20) -> list[dict]:
     path = Path(settings.audit_log_path)
     if not path.exists():

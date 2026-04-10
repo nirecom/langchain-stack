@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     ingest_chunk_size: int = Field(default=1000)
     ingest_chunk_overlap: int = Field(default=200)
 
+    # RAG retrieval
+    rag_top_k: int = Field(default=3)
+
     # Config file paths
     models_config_path: str = Field(default="/config/models.yaml")
     judge_rules_path: str = Field(default="/config/judge_rules.yaml")

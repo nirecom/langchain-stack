@@ -29,6 +29,7 @@ services:
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-cl-nagoya/ruri-v3-310m}
       - INGEST_CHUNK_SIZE=${INGEST_CHUNK_SIZE:-1000}
       - INGEST_CHUNK_OVERLAP=${INGEST_CHUNK_OVERLAP:-200}
+      - RAG_TOP_K=${RAG_TOP_K:-3}
       - INGEST_API_KEY=${INGEST_API_KEY:-}
       - CHAT_API_KEY=${CHAT_API_KEY:-}
       - AUDIT_LOG_PATH=${AUDIT_LOG_PATH:-/data/audit/ingest.jsonl}

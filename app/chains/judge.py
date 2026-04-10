@@ -79,6 +79,9 @@ The following answer was evaluated and scored poorly on Response Relevancy
 Analyze why the answer may not be relevant and provide specific,
 actionable feedback for improvement.
 
+Evaluation criteria:
+{criteria}
+
 Respond ONLY in valid JSON:
 {{
   "feedback": "specific instructions for improving the answer's relevance to the question"
@@ -93,7 +96,8 @@ Response Relevancy score: {score} (threshold: {threshold})"""),
 
 
 async def generate_feedback(
-    question: str, answer: str, score: float, threshold: float
+    question: str, answer: str, score: float, threshold: float,
+    *, criteria: str = "",
 ) -> str:
     """
     Generate improvement feedback using Judge LLM (Phase 3C).
@@ -108,6 +112,7 @@ async def generate_feedback(
             "answer": answer,
             "score": f"{score:.4f}",
             "threshold": f"{threshold:.2f}",
+            "criteria": criteria,
         })
         feedback = result.get("feedback", "Please provide a more relevant answer.")
         logger.info("Judge feedback generated (%d chars)", len(feedback))

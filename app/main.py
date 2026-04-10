@@ -151,7 +151,7 @@ async def _stream_response(request: ChatRequest):
     user_message = request.messages[-1].content
     context = ""
     if request.use_rag:
-        context = await get_relevant_context(user_message)
+        context = await get_relevant_context(user_message, model_name=request.model)
 
     run_id = "stream"
     role_sent = False
@@ -208,7 +208,7 @@ async def chat_completions(request: ChatRequest, raw_request: Request):
 
     context = ""
     if request.use_rag:
-        context = await get_relevant_context(user_message)
+        context = await get_relevant_context(user_message, model_name=request.model)
 
     result = await run_judge_chain(
         prompt=user_message,
