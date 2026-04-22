@@ -512,8 +512,8 @@ class TestSecurity:
                 headers={"Authorization": f"Bearer {crafted_token}"},
             )
             assert r.status_code == 401
-        except (httpx.LocalProtocolError, httpx.InvalidURL):
-            pass  # Client-side rejection is acceptable
+        except (httpx.LocalProtocolError, httpx.InvalidURL, UnicodeEncodeError):
+            pass  # Client-side rejection is acceptable — non-ASCII header values cannot reach the server
 
 
 # ---------------------------------------------------------------------------
