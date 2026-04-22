@@ -17,11 +17,19 @@ import time
 import pytest
 import httpx
 
+# Per-user chat tokens — mirror the new user-based ACL design.
+os.environ.setdefault("CHAT_API_KEY_KYOKO", "test-kyoko-key")
+os.environ.setdefault("CHAT_API_KEY_NIRE", "test-nire-key")
+os.environ.setdefault("CHAT_API_KEY_EDGE", "test-edge-key")
+os.environ.setdefault("CHAT_API_KEY_LUTE", "test-lute-key")
+os.environ.setdefault("INGEST_API_KEY", "test-ingest-key")
+
 BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8100")
-INGEST_API_KEY = os.getenv("TEST_INGEST_API_KEY", "test-ingest-key")
-CHAT_API_KEY = os.getenv("TEST_CHAT_API_KEY", "test-chat-key")
-DATASOURCE_A = "datasource_a"
-DATASOURCE_B = "datasource_b"
+INGEST_API_KEY = os.getenv("TEST_INGEST_API_KEY",
+                           os.environ["INGEST_API_KEY"])
+DS_FAMILY = "family-docs"
+DS_NIRE = "nire-docs"
+DS_PARENTS = "parents-docs"
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures-phase4a")
 
 
@@ -29,8 +37,10 @@ def _ingest_headers():
     return {"Authorization": f"Bearer {INGEST_API_KEY}"}
 
 
-def _chat_headers():
-    return {"Authorization": f"Bearer {CHAT_API_KEY}"}
+def _chat_headers(user: str = "nire"):
+    """Return Bearer headers for the given user's chat token."""
+    token = os.environ.get(f"CHAT_API_KEY_{user.upper()}", "")
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -57,7 +67,7 @@ def client():
 def cleanup(client):
     """Delete test datasources after each test."""
     yield
-    for ds in [DATASOURCE_A, DATASOURCE_B, "unregistered-ds"]:
+    for ds in [DS_FAMILY, DS_NIRE, DS_PARENTS, "unregistered-ds"]:
         client.delete(f"/ingest/{ds}", headers=_ingest_headers())
 
 
@@ -79,7 +89,7 @@ def _ingest_txt(client, datasource, filename="sample.txt"):
 class TestIngestAuth:
     def test_valid_token(self, wait_for_server, client):
         """Valid INGEST_API_KEY → 200."""
-        r = _ingest_txt(client, DATASOURCE_A)
+        r = _ingest_txt(client, DS_FAMILY)
         assert r.status_code == 200
 
     def test_missing_token(self, client):
@@ -88,7 +98,7 @@ class TestIngestAuth:
             r = client.post(
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
-                data={"datasource": DATASOURCE_A},
+                data={"datasource": DS_FAMILY},
             )
         assert r.status_code == 401
 
@@ -98,29 +108,29 @@ class TestIngestAuth:
             r = client.post(
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
-                data={"datasource": DATASOURCE_A},
+                data={"datasource": DS_FAMILY},
                 headers={"Authorization": "Bearer wrong-key"},
             )
         assert r.status_code == 401
 
     def test_delete_requires_auth(self, client):
         """DELETE /ingest/{ds} without token → 401."""
-        r = client.delete(f"/ingest/{DATASOURCE_A}")
+        r = client.delete(f"/ingest/{DS_FAMILY}")
         assert r.status_code == 401
 
     def test_list_requires_auth(self, client):
         """GET /ingest/{ds} without token → 401."""
-        r = client.get(f"/ingest/{DATASOURCE_A}")
+        r = client.get(f"/ingest/{DS_FAMILY}")
         assert r.status_code == 401
 
     def test_batch_requires_auth(self, client):
         """POST /ingest/batch without token → 401."""
-        r = client.post("/ingest/batch", data={"datasource": DATASOURCE_A})
+        r = client.post("/ingest/batch", data={"datasource": DS_FAMILY})
         assert r.status_code == 401
 
     def test_delete_file_requires_auth(self, client):
         """DELETE /ingest/{ds}/{file} without token → 401."""
-        r = client.delete(f"/ingest/{DATASOURCE_A}/sample.txt")
+        r = client.delete(f"/ingest/{DS_FAMILY}/sample.txt")
         assert r.status_code == 401
 
 
@@ -128,15 +138,16 @@ class TestIngestAuth:
 
 
 class TestChatAuth:
-    def test_valid_token(self, wait_for_server, client):
-        """Valid CHAT_API_KEY → 200 (or model error, but not 401)."""
+    @pytest.mark.parametrize("user", ["kyoko", "nire", "edge", "lute"])
+    def test_valid_token(self, wait_for_server, client, user):
+        """Each valid per-user chat token → 200 (or model error, but not 401)."""
         r = client.post(
             "/v1/chat/completions",
             json={
                 "model": "judge-chain",
                 "messages": [{"role": "user", "content": "hello"}],
             },
-            headers=_chat_headers(),
+            headers=_chat_headers(user),
         )
         # May fail for other reasons (LLM down), but must not be 401
         assert r.status_code != 401
@@ -183,7 +194,7 @@ class TestChatAuth:
 class TestDatasourceValidation:
     def test_registered_datasource_ok(self, wait_for_server, client):
         """Ingesting to a registered datasource succeeds."""
-        r = _ingest_txt(client, DATASOURCE_A)
+        r = _ingest_txt(client, DS_FAMILY)
         assert r.status_code == 200
 
     def test_unregistered_datasource_rejected(self, client):
@@ -225,7 +236,7 @@ class TestDryRun:
             r = client.post(
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
-                data={"datasource": DATASOURCE_A, "dry_run": "true"},
+                data={"datasource": DS_FAMILY, "dry_run": "true"},
                 headers=_ingest_headers(),
             )
         assert r.status_code == 200
@@ -244,12 +255,12 @@ class TestDryRun:
             client.post(
                 "/ingest",
                 files={"file": ("sample.txt", fp, "text/plain")},
-                data={"datasource": DATASOURCE_A, "dry_run": "true"},
+                data={"datasource": DS_FAMILY, "dry_run": "true"},
                 headers=_ingest_headers(),
             )
         # Listing the datasource should show no files (collection may not exist)
         r = client.get(
-            f"/ingest/{DATASOURCE_A}",
+            f"/ingest/{DS_FAMILY}",
             headers=_ingest_headers(),
         )
         if r.status_code == 200:
@@ -266,7 +277,7 @@ class TestDryRun:
                 r = client.post(
                     "/ingest",
                     files={"file": ("sample.txt", fp, "text/plain")},
-                    data={"datasource": DATASOURCE_A, "dry_run": "true"},
+                    data={"datasource": DS_FAMILY, "dry_run": "true"},
                     headers=_ingest_headers(),
                 )
             assert r.status_code == 200
@@ -281,7 +292,7 @@ class TestDryRun:
 class TestAuditLog:
     def test_ingest_creates_audit_entry(self, wait_for_server, client):
         """Successful ingest creates an audit log entry."""
-        _ingest_txt(client, DATASOURCE_A)
+        _ingest_txt(client, DS_FAMILY)
         r = client.get(
             "/audit/recent",
             headers=_ingest_headers(),
@@ -291,7 +302,7 @@ class TestAuditLog:
         # Find the most recent ingest event for datasource_a
         matches = [
             e for e in events
-            if e["datasource"] == DATASOURCE_A
+            if e["datasource"] == DS_FAMILY
             and e["action"] == "ingest"
             and e["status"] == "ok"
         ]
@@ -303,14 +314,14 @@ class TestAuditLog:
 
     def test_delete_creates_audit_entry(self, client):
         """Deleting a datasource creates an audit log entry."""
-        _ingest_txt(client, DATASOURCE_A)
-        client.delete(f"/ingest/{DATASOURCE_A}", headers=_ingest_headers())
+        _ingest_txt(client, DS_FAMILY)
+        client.delete(f"/ingest/{DS_FAMILY}", headers=_ingest_headers())
         r = client.get("/audit/recent", headers=_ingest_headers())
         assert r.status_code == 200
         events = r.json()["events"]
         matches = [
             e for e in events
-            if e["datasource"] == DATASOURCE_A
+            if e["datasource"] == DS_FAMILY
             and e["action"] == "delete"
         ]
         assert len(matches) >= 1
@@ -341,8 +352,8 @@ class TestAuditLog:
 
     def test_audit_recent_ordering(self, client):
         """Audit events should be ordered by timestamp (most recent last)."""
-        _ingest_txt(client, DATASOURCE_A, filename="sample.txt")
-        _ingest_txt(client, DATASOURCE_A, filename="sample.md")
+        _ingest_txt(client, DS_FAMILY, filename="sample.txt")
+        _ingest_txt(client, DS_FAMILY, filename="sample.md")
         r = client.get("/audit/recent", headers=_ingest_headers())
         assert r.status_code == 200
         events = r.json()["events"]
@@ -356,9 +367,9 @@ class TestAuditLog:
 class TestDataIsolation:
     def test_ingest_to_a_not_in_b(self, wait_for_server, client):
         """File ingested to datasource_a must not appear in datasource_b."""
-        _ingest_txt(client, DATASOURCE_A)
+        _ingest_txt(client, DS_FAMILY)
         r = client.get(
-            f"/ingest/{DATASOURCE_B}",
+            f"/ingest/{DS_NIRE}",
             headers=_ingest_headers(),
         )
         if r.status_code == 200:
@@ -370,9 +381,9 @@ class TestDataIsolation:
 
     def test_ingest_to_b_not_in_a(self, client):
         """File ingested to datasource_b must not appear in datasource_a."""
-        _ingest_txt(client, DATASOURCE_B, filename="sample.md")
+        _ingest_txt(client, DS_NIRE, filename="sample.md")
         r = client.get(
-            f"/ingest/{DATASOURCE_A}",
+            f"/ingest/{DS_FAMILY}",
             headers=_ingest_headers(),
         )
         if r.status_code == 200:
@@ -388,12 +399,12 @@ class TestDataIsolation:
 class TestIdempotency:
     def test_ingest_duplicate_replaces(self, wait_for_server, client):
         """Ingesting same file twice does not double the chunk count."""
-        _ingest_txt(client, DATASOURCE_A)
-        r1 = client.get(f"/ingest/{DATASOURCE_A}", headers=_ingest_headers())
+        _ingest_txt(client, DS_FAMILY)
+        r1 = client.get(f"/ingest/{DS_FAMILY}", headers=_ingest_headers())
         count1 = r1.json()["files"][0]["chunk_count"]
 
-        _ingest_txt(client, DATASOURCE_A)
-        r2 = client.get(f"/ingest/{DATASOURCE_A}", headers=_ingest_headers())
+        _ingest_txt(client, DS_FAMILY)
+        r2 = client.get(f"/ingest/{DS_FAMILY}", headers=_ingest_headers())
         count2 = r2.json()["files"][0]["chunk_count"]
 
         assert count1 == count2
@@ -401,11 +412,11 @@ class TestIdempotency:
 
     def test_delete_datasource_twice(self, client):
         """Deleting same datasource twice: first succeeds, second errors gracefully."""
-        _ingest_txt(client, DATASOURCE_A)
-        r1 = client.delete(f"/ingest/{DATASOURCE_A}", headers=_ingest_headers())
+        _ingest_txt(client, DS_FAMILY)
+        r1 = client.delete(f"/ingest/{DS_FAMILY}", headers=_ingest_headers())
         assert r1.status_code == 200
 
-        r2 = client.delete(f"/ingest/{DATASOURCE_A}", headers=_ingest_headers())
+        r2 = client.delete(f"/ingest/{DS_FAMILY}", headers=_ingest_headers())
         # Second delete may return 200 or 500 depending on ChromaDB behavior
         # but should not crash the server
         assert r2.status_code in (200, 404, 500)

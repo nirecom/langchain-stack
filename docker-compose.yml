@@ -31,7 +31,10 @@ services:
       - INGEST_CHUNK_OVERLAP=${INGEST_CHUNK_OVERLAP:-200}
       - RAG_TOP_K=${RAG_TOP_K:-3}
       - INGEST_API_KEY=${INGEST_API_KEY:-}
-      - CHAT_API_KEY=${CHAT_API_KEY:-}
+      - CHAT_API_KEY_KYOKO=${CHAT_API_KEY_KYOKO:-}
+      - CHAT_API_KEY_NIRE=${CHAT_API_KEY_NIRE:-}
+      - CHAT_API_KEY_EDGE=${CHAT_API_KEY_EDGE:-}
+      - CHAT_API_KEY_LUTE=${CHAT_API_KEY_LUTE:-}
       - AUDIT_LOG_PATH=${AUDIT_LOG_PATH:-/data/audit/ingest.jsonl}
     volumes:
       - ./config:/config:ro

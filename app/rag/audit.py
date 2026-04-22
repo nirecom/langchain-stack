@@ -34,11 +34,12 @@ def log_ingest_event(
 
 
 def log_retrieve_event(
-    model_name: str,
+    *,
+    user: str,
+    model_name: str = "",
     datasources_queried: list[str],
     query: str,
     hits: int,
-    *,
     status: str = "ok",
     error: str = "",
 ) -> None:
@@ -47,6 +48,7 @@ def log_retrieve_event(
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": "retrieve",
+        "user": user,
         "model_name": model_name,
         "datasources_queried": datasources_queried,
         "query_length": len(query),

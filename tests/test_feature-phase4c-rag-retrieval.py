@@ -122,12 +122,16 @@ def tied_distance_client():
 # -- Helpers ---------------------------------------------------------------
 
 
-def _patch_retriever(chroma_client, embeddings, permitted, settings_overrides=None):
-    """Return a dict of patches for rag.retriever dependencies."""
+def _patch_retriever(chroma_client, embeddings, user, permitted, settings_overrides=None):
+    """Return a dict of patches for rag.retriever dependencies.
+
+    ``user`` is the username to pass to get_relevant_context.
+    ``permitted`` is the list of datasources the mock will return for that user.
+    """
     patches = {
         "rag.retriever.get_chroma_client": MagicMock(return_value=chroma_client),
         "rag.retriever.get_embeddings": MagicMock(return_value=embeddings),
-        "rag.retriever.get_permitted_datasources": MagicMock(return_value=permitted),
+        "rag.retriever.get_permitted_datasources_for_user": MagicMock(return_value=permitted),
         "rag.retriever.log_retrieve_event": MagicMock(),
     }
     return patches
@@ -146,19 +150,19 @@ class TestNormalCases:
         """1 permitted collection, 5 docs, rag_top_k=3 -> top 3 in distance order,
         DOCUMENT_PREFIX stripped."""
         patches = _patch_retriever(
-            single_collection_client, stub_embeddings, ["alpha"]
+            single_collection_client, stub_embeddings, "nire", ["alpha"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("test query", model_name="test-model")
+            result = await get_relevant_context("test query", user="nire")
 
         # Top 3 docs should be returned with prefix stripped
         assert "doc0" in result
@@ -175,19 +179,19 @@ class TestNormalCases:
         """2 collections alpha([0.2,0.4]) and beta([0.1,0.5]), rag_top_k=3
         -> result order: beta:0.1, alpha:0.2, alpha:0.4."""
         patches = _patch_retriever(
-            multi_collection_client, stub_embeddings, ["alpha", "beta"]
+            multi_collection_client, stub_embeddings, "nire", ["alpha", "beta"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("test query", model_name="test-model")
+            result = await get_relevant_context("test query", user="nire")
 
         # beta_doc0 (0.1) should appear before alpha_doc0 (0.2) before alpha_doc1 (0.4)
         pos_beta0 = result.find("beta_doc0")
@@ -204,19 +208,19 @@ class TestNormalCases:
     ):
         """2 collections x 5 hits each, rag_top_k=3 -> exactly 3 items."""
         patches = _patch_retriever(
-            large_multi_client, stub_embeddings, ["col_a", "col_b"]
+            large_multi_client, stub_embeddings, "nire", ["col_a", "col_b"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("test query", model_name="test-model")
+            result = await get_relevant_context("test query", user="nire")
 
         # Count distinct doc references — should be exactly 3
         # Each doc appears on its own line or section; count non-empty segments
@@ -236,12 +240,12 @@ class TestNormalCases:
     ):
         """n_results=None -> settings.rag_top_k is consulted."""
         patches = _patch_retriever(
-            single_collection_client, stub_embeddings, ["alpha"]
+            single_collection_client, stub_embeddings, "nire", ["alpha"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
@@ -249,7 +253,7 @@ class TestNormalCases:
             from rag.retriever import get_relevant_context
 
             result = await get_relevant_context(
-                "test query", model_name="test-model", n_results=None
+                "test query", user="nire", n_results=None
             )
 
         # With rag_top_k=2, only 2 docs should be returned
@@ -265,17 +269,17 @@ class TestNormalCases:
 
 class TestErrorCases:
     @pytest.mark.asyncio
-    async def test_unknown_model_returns_empty(
+    async def test_unknown_user_returns_empty(
         self, single_collection_client, stub_embeddings, caplog
     ):
-        """model_name='nonexistent' -> '' + WARNING log."""
+        """user='unknown' -> '' + WARNING log."""
         patches = _patch_retriever(
-            single_collection_client, stub_embeddings, []  # no permitted datasources
+            single_collection_client, stub_embeddings, "unknown", []  # no permitted datasources
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
@@ -284,7 +288,7 @@ class TestErrorCases:
 
             with caplog.at_level(logging.WARNING):
                 result = await get_relevant_context(
-                    "test query", model_name="nonexistent"
+                    "test query", user="unknown"
                 )
 
         assert result == ""
@@ -302,12 +306,12 @@ class TestErrorCases:
             "alpha": StubCollection("alpha", alpha_docs, alpha_dists),
         })
         patches = _patch_retriever(
-            client, stub_embeddings, ["alpha", "missing"]
+            client, stub_embeddings, "nire", ["alpha", "missing"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
@@ -316,7 +320,7 @@ class TestErrorCases:
 
             with caplog.at_level(logging.WARNING):
                 result = await get_relevant_context(
-                    "test query", model_name="test-model"
+                    "test query", user="nire"
                 )
 
         assert "alpha_found" in result
@@ -325,24 +329,24 @@ class TestErrorCases:
         assert any("missing" in msg.lower() or "not found" in msg.lower() for msg in warning_msgs)
 
     @pytest.mark.asyncio
-    async def test_empty_model_name_default_deny(
+    async def test_empty_user_default_deny(
         self, single_collection_client, stub_embeddings
     ):
-        """model_name='' -> '' (permitted is [])."""
+        """user='' -> '' (permitted is [])."""
         patches = _patch_retriever(
-            single_collection_client, stub_embeddings, []  # empty = default deny
+            single_collection_client, stub_embeddings, "", []  # empty = default deny
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("test query", model_name="")
+            result = await get_relevant_context("test query", user="")
 
         assert result == ""
 
@@ -362,14 +366,14 @@ class TestEdgeCases:
         with (
             patch("rag.retriever.get_chroma_client", MagicMock(return_value=single_collection_client)),
             patch("rag.retriever.get_embeddings", mock_get_embeddings),
-            patch("rag.retriever.get_permitted_datasources", MagicMock(return_value=["alpha"])),
+            patch("rag.retriever.get_permitted_datasources_for_user", MagicMock(return_value=["alpha"])),
             patch("rag.retriever.log_retrieve_event", MagicMock()),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("", model_name="test-model")
+            result = await get_relevant_context("", user="nire")
 
         assert result == ""
         mock_get_embeddings.assert_not_called()
@@ -383,14 +387,14 @@ class TestEdgeCases:
         with (
             patch("rag.retriever.get_chroma_client", MagicMock(return_value=single_collection_client)),
             patch("rag.retriever.get_embeddings", mock_get_embeddings),
-            patch("rag.retriever.get_permitted_datasources", MagicMock(return_value=["alpha"])),
+            patch("rag.retriever.get_permitted_datasources_for_user", MagicMock(return_value=["alpha"])),
             patch("rag.retriever.log_retrieve_event", MagicMock()),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("   ", model_name="test-model")
+            result = await get_relevant_context("   ", user="nire")
 
         assert result == ""
         mock_get_embeddings.assert_not_called()
@@ -401,19 +405,19 @@ class TestEdgeCases:
     ):
         """alpha at 0.5, beta at 0.5 -> alpha first (sorted permitted order)."""
         patches = _patch_retriever(
-            tied_distance_client, stub_embeddings, ["alpha", "beta"]
+            tied_distance_client, stub_embeddings, "nire", ["alpha", "beta"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 5
             from rag.retriever import get_relevant_context
 
-            result = await get_relevant_context("test query", model_name="test-model")
+            result = await get_relevant_context("test query", user="nire")
 
         pos_alpha = result.find("alpha_tied")
         pos_beta = result.find("beta_tied")
@@ -427,12 +431,12 @@ class TestEdgeCases:
     ):
         """n_results=1 -> only 1 result despite rag_top_k=3."""
         patches = _patch_retriever(
-            single_collection_client, stub_embeddings, ["alpha"]
+            single_collection_client, stub_embeddings, "nire", ["alpha"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
@@ -440,7 +444,7 @@ class TestEdgeCases:
             from rag.retriever import get_relevant_context
 
             result = await get_relevant_context(
-                "test query", model_name="test-model", n_results=1
+                "test query", user="nire", n_results=1
             )
 
         assert "doc0" in result
@@ -462,19 +466,19 @@ class TestEdgeCases:
         spy_embeddings.embed_documents = tracking_embed
 
         patches = _patch_retriever(
-            single_collection_client, spy_embeddings, ["alpha"]
+            single_collection_client, spy_embeddings, "nire", ["alpha"]
         )
         with (
             patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
             patch("rag.retriever.get_embeddings", MagicMock(return_value=spy_embeddings)),
-            patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+            patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
             patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            await get_relevant_context("my question", model_name="test-model")
+            await get_relevant_context("my question", user="nire")
 
         # The embedding call should have exactly one QUERY_PREFIX
         assert len(calls) >= 1
@@ -500,12 +504,12 @@ class TestIdempotency:
         results = []
         for _ in range(2):
             patches = _patch_retriever(
-                single_collection_client, stub_embeddings, ["alpha"]
+                single_collection_client, stub_embeddings, "nire", ["alpha"]
             )
             with (
                 patch("rag.retriever.get_chroma_client", patches["rag.retriever.get_chroma_client"]),
                 patch("rag.retriever.get_embeddings", patches["rag.retriever.get_embeddings"]),
-                patch("rag.retriever.get_permitted_datasources", patches["rag.retriever.get_permitted_datasources"]),
+                patch("rag.retriever.get_permitted_datasources_for_user", patches["rag.retriever.get_permitted_datasources_for_user"]),
                 patch("rag.retriever.log_retrieve_event", patches["rag.retriever.log_retrieve_event"]),
                 patch("rag.retriever.settings") as mock_settings,
             ):
@@ -513,7 +517,7 @@ class TestIdempotency:
                 from rag.retriever import get_relevant_context
 
                 result = await get_relevant_context(
-                    "determinism test", model_name="test-model"
+                    "determinism test", user="nire"
                 )
                 results.append(result)
 
@@ -615,13 +619,14 @@ class TestAudit:
 
         # Use a real log_retrieve_event that writes to our temp file
         def fake_log_retrieve_event(
-            model_name, datasources_queried, query, hits, *, status="ok", error=""
+            *, user, model_name="", datasources_queried, query, hits, status="ok", error=""
         ):
             import json as _json
             from datetime import datetime, timezone
             entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "action": "retrieve",
+                "user": user,
                 "model_name": model_name,
                 "datasources_queried": datasources_queried,
                 "query_length": len(query),
@@ -636,14 +641,14 @@ class TestAudit:
         with (
             patch("rag.retriever.get_chroma_client", MagicMock(return_value=single_collection_client)),
             patch("rag.retriever.get_embeddings", MagicMock(return_value=stub_embeddings)),
-            patch("rag.retriever.get_permitted_datasources", MagicMock(return_value=["alpha"])),
+            patch("rag.retriever.get_permitted_datasources_for_user", MagicMock(return_value=["alpha"])),
             patch("rag.retriever.log_retrieve_event", fake_log_retrieve_event),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            await get_relevant_context("audit test query", model_name="audit-model")
+            await get_relevant_context("audit test query", user="nire")
 
         # Verify the audit file was written
         assert audit_file.exists()
@@ -651,7 +656,7 @@ class TestAudit:
         assert len(lines) >= 1
         entry = json.loads(lines[-1])
         assert entry["action"] == "retrieve"
-        assert entry["model_name"] == "audit-model"
+        assert entry.get("user") == "nire"
         assert isinstance(entry["datasources_queried"], list)
         assert isinstance(entry["query_length"], int)
         assert entry["query_length"] > 0
@@ -667,13 +672,14 @@ class TestAudit:
         secret_query = "my private medical question"
 
         def fake_log_retrieve_event(
-            model_name, datasources_queried, query, hits, *, status="ok", error=""
+            *, user, model_name="", datasources_queried, query, hits, status="ok", error=""
         ):
             import json as _json
             from datetime import datetime, timezone
             entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "action": "retrieve",
+                "user": user,
                 "model_name": model_name,
                 "datasources_queried": datasources_queried,
                 "query_length": len(query),
@@ -686,14 +692,14 @@ class TestAudit:
         with (
             patch("rag.retriever.get_chroma_client", MagicMock(return_value=single_collection_client)),
             patch("rag.retriever.get_embeddings", MagicMock(return_value=stub_embeddings)),
-            patch("rag.retriever.get_permitted_datasources", MagicMock(return_value=["alpha"])),
+            patch("rag.retriever.get_permitted_datasources_for_user", MagicMock(return_value=["alpha"])),
             patch("rag.retriever.log_retrieve_event", fake_log_retrieve_event),
             patch("rag.retriever.settings") as mock_settings,
         ):
             mock_settings.rag_top_k = 3
             from rag.retriever import get_relevant_context
 
-            await get_relevant_context(secret_query, model_name="test-model")
+            await get_relevant_context(secret_query, user="nire")
 
         assert audit_file.exists()
         raw = audit_file.read_text(encoding="utf-8")

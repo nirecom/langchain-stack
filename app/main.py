@@ -7,6 +7,7 @@ Phase 4B: Access control, audit logging, dry-run mode.
 """
 import json
 import logging
+import secrets
 import tempfile
 import time
 from pathlib import Path
@@ -16,7 +17,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain, run_judge_chain_stream
 from rag.retriever import get_relevant_context
-from rag.access_control import is_valid_datasource
+from rag.access_control import (
+    UserRegistry, validate_access_control, load_access_control,
+    set_registry, get_user_by_api_key, is_valid_datasource,
+)
 from rag.audit import log_ingest_event, get_recent_events
 import chromadb.errors
 from rag.ingest import (
@@ -32,11 +36,14 @@ logger = logging.getLogger(__name__)
 
 
 def _verify_api_key(request: Request, expected_key: str) -> None:
-    """Check Bearer token. Raises 401 if key is set and token is missing/wrong."""
+    """Check Bearer token for a single expected key. Raises 401 on mismatch."""
     if not expected_key:
         return  # Auth disabled
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth[7:] != expected_key:
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    token = auth[7:]
+    if not secrets.compare_digest(token, expected_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
@@ -44,8 +51,18 @@ def _verify_ingest_auth(request: Request) -> None:
     _verify_api_key(request, settings.ingest_api_key)
 
 
-def _verify_chat_auth(request: Request) -> None:
-    _verify_api_key(request, settings.chat_api_key)
+def _verify_chat_auth(request: Request) -> str:
+    """Verify chat Bearer token against the user registry. Returns the username."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    token = auth[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    user = get_user_by_api_key(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return user
 
 
 def _validate_datasource(datasource: str) -> None:
@@ -98,6 +115,14 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    config = load_access_control()
+    registry = UserRegistry.build_from_config(config)
+    validate_access_control(config, registry)
+    set_registry(registry)
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -146,12 +171,12 @@ def _sse_role(run_id: str) -> str:
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
 
-async def _stream_response(request: ChatRequest):
+async def _stream_response(request: ChatRequest, *, user: str):
     """Async generator that yields SSE events for streaming response."""
     user_message = request.messages[-1].content
     context = ""
     if request.use_rag:
-        context = await get_relevant_context(user_message, model_name=request.model)
+        context = await get_relevant_context(user_message, user=user)
 
     run_id = "stream"
     role_sent = False
@@ -192,10 +217,10 @@ async def _stream_response(request: ChatRequest):
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatRequest, raw_request: Request):
-    _verify_chat_auth(raw_request)
+    user = _verify_chat_auth(raw_request)
     if request.stream:
         return StreamingResponse(
-            _stream_response(request),
+            _stream_response(request, user=user),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -203,12 +228,12 @@ async def chat_completions(request: ChatRequest, raw_request: Request):
             },
         )
 
-    # Non-streaming path (unchanged from Phase 3D)
+    # Non-streaming path
     user_message = request.messages[-1].content
 
     context = ""
     if request.use_rag:
-        context = await get_relevant_context(user_message, model_name=request.model)
+        context = await get_relevant_context(user_message, user=user)
 
     result = await run_judge_chain(
         prompt=user_message,

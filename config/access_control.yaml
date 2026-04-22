@@ -1,19 +1,30 @@
-# Access control configuration for datasource and model permissions.
+# Access control configuration for datasource and user permissions.
 # Datasource names must match ChromaDB collection names exactly.
 # Only listed datasources are allowed — unlisted ones are rejected (default-deny).
+# User API key values are stored in .env — only the env var name is listed here.
 
 datasources:
-  datasource_a:
-    description: "Shared documents"
-  datasource_b:
-    description: "Restricted documents"
+  parents-docs:
+    description: "Parents shared documents (local file share)"
+  nire-docs:
+    description: "Nire documents (Notion)"
+  family-docs:
+    description: "Family shared documents"
   test-pytest:
     description: "Test datasource for Phase 4A ingestion tests"
   test-ds-mgmt:
     description: "Test datasource for datasource management tests"
 
-models:
-  judge-chain:
-    datasources: [datasource_a]
-  judge-chain-full:
-    datasources: [datasource_a, datasource_b]
+users:
+  kyoko:
+    api_key_env: CHAT_API_KEY_KYOKO
+    datasources: [parents-docs, family-docs]
+  nire:
+    api_key_env: CHAT_API_KEY_NIRE
+    datasources: [parents-docs, nire-docs, family-docs]
+  edge:
+    api_key_env: CHAT_API_KEY_EDGE
+    datasources: [family-docs]
+  lute:
+    api_key_env: CHAT_API_KEY_LUTE
+    datasources: [family-docs]

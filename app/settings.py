@@ -63,7 +63,6 @@ class Settings(BaseSettings):
 
     # API keys (empty = auth disabled)
     ingest_api_key: str = Field(default="")
-    chat_api_key: str = Field(default="")
 
     # Audit log
     audit_log_path: str = Field(default="/data/audit/ingest.jsonl")

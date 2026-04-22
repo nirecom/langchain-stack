@@ -1,9 +1,22 @@
-"""Access control: datasource validation and model-to-datasource mapping."""
+"""Access control: datasource validation and user-based ACL."""
+import logging
+import os
+import secrets
+
 from settings import settings
+
+logger = logging.getLogger(__name__)
+
+_REGISTRY: "UserRegistry | None" = None
 
 
 def load_access_control() -> dict:
-    return settings.access_control
+    config = settings.access_control
+    if "models" in config:
+        logger.warning(
+            "Legacy key 'models' found in access_control.yaml — ignored; delete this section."
+        )
+    return config
 
 
 def get_valid_datasources() -> set[str]:
@@ -20,8 +33,114 @@ def is_valid_datasource(name: str) -> bool:
     return name in ds
 
 
-def get_permitted_datasources(model_name: str) -> list[str]:
-    config = load_access_control()
-    models = config.get("models", {})
-    model = models.get(model_name, {})
-    return model.get("datasources", [])
+class UserRegistry:
+    def __init__(
+        self,
+        token_to_user: dict[str, str],
+        user_to_datasources: dict[str, list[str]],
+    ) -> None:
+        self._token_to_user = token_to_user
+        self._user_to_datasources = user_to_datasources
+
+    @classmethod
+    def build_from_config(cls, config: dict) -> "UserRegistry":
+        if "models" in config:
+            logger.warning(
+                "Legacy key 'models' found in access_control.yaml — ignored; delete this section."
+            )
+        users = config.get("users", {})
+        token_to_user: dict[str, str] = {}
+        user_to_datasources: dict[str, list[str]] = {}
+
+        for username, user_cfg in users.items():
+            env_var = user_cfg.get("api_key_env", "")
+            token = os.environ.get(env_var, "") if env_var else ""
+            if not token:
+                logger.warning(
+                    "UserRegistry: env var '%s' for user '%s' is unset or empty — skipping",
+                    env_var,
+                    username,
+                )
+                continue
+            token_to_user[token] = username
+            datasources = list(dict.fromkeys(user_cfg.get("datasources", [])))
+            user_to_datasources[username] = datasources
+
+        return cls(token_to_user, user_to_datasources)
+
+    def get_user_by_api_key(self, token: str) -> str | None:
+        for stored_token, username in self._token_to_user.items():
+            if secrets.compare_digest(stored_token, token):
+                return username
+        return None
+
+    def get_permitted_datasources_for_user(self, user: str) -> list[str]:
+        return list(self._user_to_datasources.get(user, []))
+
+
+def set_registry(registry: UserRegistry) -> None:
+    global _REGISTRY
+    _REGISTRY = registry
+
+
+def get_user_by_api_key(token: str) -> str | None:
+    if _REGISTRY is None:
+        return None
+    return _REGISTRY.get_user_by_api_key(token)
+
+
+def get_permitted_datasources_for_user(user: str) -> list[str]:
+    if _REGISTRY is None:
+        return []
+    return _REGISTRY.get_permitted_datasources_for_user(user)
+
+
+def validate_access_control(config: dict, registry: UserRegistry) -> None:
+    valid_datasources = set((config.get("datasources") or {}).keys())
+    users = config.get("users", {})
+
+    # Step 1: Schema ref integrity — each user's datasources must be registered
+    for username, user_cfg in users.items():
+        for ds in user_cfg.get("datasources", []):
+            if ds not in valid_datasources:
+                raise RuntimeError(
+                    f"User '{username}' references unregistered datasource '{ds}'"
+                )
+
+    # Step 2: api_key_env name duplicates (before env resolution)
+    seen_env_vars: dict[str, str] = {}
+    for username, user_cfg in users.items():
+        env_var = user_cfg.get("api_key_env", "")
+        if env_var in seen_env_vars:
+            raise RuntimeError(
+                f"Duplicate api_key_env '{env_var}' for users "
+                f"'{seen_env_vars[env_var]}' and '{username}'"
+            )
+        seen_env_vars[env_var] = username
+
+    # Step 3: Resolve tokens (mirrors build_from_config — skip empty)
+    resolved: list[tuple[str, str]] = []  # (username, token)
+    for username, user_cfg in users.items():
+        env_var = user_cfg.get("api_key_env", "")
+        token = os.environ.get(env_var, "") if env_var else ""
+        if token:
+            resolved.append((username, token))
+
+    # Step 4: Resolved token value duplicates
+    seen_tokens: dict[str, str] = {}
+    for username, token in resolved:
+        for seen_token, seen_user in seen_tokens.items():
+            if secrets.compare_digest(seen_token, token):
+                raise RuntimeError(
+                    f"Users '{seen_user}' and '{username}' share the same API key value"
+                )
+        seen_tokens[token] = username
+
+    # Step 5: Chat × INGEST_API_KEY cross collision
+    ingest_key = os.environ.get("INGEST_API_KEY", "")
+    if ingest_key:
+        for _, chat_token in resolved:
+            if secrets.compare_digest(ingest_key, chat_token):
+                raise RuntimeError(
+                    "A chat API key matches INGEST_API_KEY — keys must be unique"
+                )

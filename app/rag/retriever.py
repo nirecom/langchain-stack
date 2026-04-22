@@ -1,7 +1,7 @@
 """
 ChromaDB retriever with ACL-scoped multi-collection search.
 
-Phase 4C: Queries permitted collections per model, merges results by distance.
+Phase 4C: Queries permitted collections per user, merges results by distance.
 n_results is the final total hit count across all collections — each permitted
 collection is queried for up to n_results candidates, then the merged pool is
 truncated to n_results by ascending distance. Ties are broken by permitted-
@@ -13,7 +13,7 @@ import chromadb.errors
 
 from models.chroma import get_chroma_client
 from models.embeddings import get_embeddings, QUERY_PREFIX
-from rag.access_control import get_permitted_datasources
+from rag.access_control import get_permitted_datasources_for_user
 from rag.audit import log_retrieve_event
 from settings import settings
 
@@ -26,24 +26,24 @@ DOCUMENT_PREFIX = "検索文書: "
 async def get_relevant_context(
     query: str,
     *,
-    model_name: str = "",
+    user: str,
     n_results: int | None = None,
 ) -> str:
     """
     Retrieve RAG context for *query*, restricted to ACL-permitted collections
-    for *model_name*. Returns "" on failure or when no results are found.
+    for *user*. Returns "" on failure or when no results are found.
     """
     if not query.strip():
         return ""
 
     k = n_results if n_results is not None else settings.rag_top_k
 
-    permitted = get_permitted_datasources(model_name)
+    permitted = get_permitted_datasources_for_user(user)
     if not permitted:
         logger.warning(
-            "RAG: no datasources permitted for model '%s'", model_name,
+            "RAG: no datasources permitted for user '%s'", user,
         )
-        log_retrieve_event(model_name, [], query, 0,
+        log_retrieve_event(user=user, datasources_queried=[], query=query, hits=0,
                            status="no_permitted_datasources")
         return ""
 
@@ -81,6 +81,6 @@ async def get_relevant_context(
     candidates.sort(key=lambda t: (t[0], t[1]))
     top = candidates[:k]
 
-    log_retrieve_event(model_name, sorted(permitted), query, len(top))
+    log_retrieve_event(user=user, datasources_queried=sorted(permitted), query=query, hits=len(top))
 
     return "\n\n---\n\n".join(text for _, _, text in top) if top else ""
