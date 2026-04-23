@@ -60,6 +60,7 @@ docker compose up -d langchain-api   # Restart after config/code change
 
 ## ⚠ Caution
 
-- `.env` contains secrets — excluded from Git via `.gitignore`
+- `.env` contains secrets — excluded from Git via `.gitignore`. Copy from `.env.example` and fill in values.
+- Changing `EMBEDDING_MODEL_NAME` requires re-ingesting all documents (vectors are model-specific)
 - `data/` directory is gitignored (ChromaDB, uploads, audit logs)
 - Never use `docker compose down -v` (deletes ChromaDB data)
