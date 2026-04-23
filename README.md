@@ -5,7 +5,7 @@ LLM-as-a-Judge chain with RAG support, exposed as an OpenAI-compatible API.
 ## Features
 
 - **LLM-as-a-Judge**: Evaluates LLM responses with verdict, score, and feedback. Supports retry loops.
-- **RAG**: ChromaDB-backed retrieval with per-user datasource access control.
+- **RAG**: ChromaDB-backed retrieval with per-user datasource access control. Uses `BAAI/bge-m3` embedding (selected via A/B evaluation against ruri/qwen3/bgem3).
 - **User-based ACL**: Each user has an individual API key mapped to permitted datasources.
 - **Streaming**: SSE streaming (`stream: true`) supported.
 - **Audit logging**: Ingest and retrieval events logged to JSONL with user attribution.
@@ -47,6 +47,8 @@ See `.env.example` for the full list. Key variables:
 | `LITELLM_API_KEY` | LiteLLM master key |
 | `INGEST_API_KEY` | Admin key for document ingestion |
 | `CHAT_API_KEY_<USER>` | Per-user chat API key (KYOKO, NIRE, EDGE, LUTE) |
+| `EMBEDDING_MODEL_NAME` | Embedding model (default: `BAAI/bge-m3`) |
+| `INGEST_DEVICE` | Device for ingest embeddings: `cpu` (default) or `cuda` |
 
 ## Daily Operations
 

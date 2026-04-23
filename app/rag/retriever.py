@@ -12,15 +12,20 @@ import logging
 import chromadb.errors
 
 from models.chroma import get_chroma_client
-from models.embeddings import get_embeddings, QUERY_PREFIX
+from models.embeddings import get_embeddings
+from models.embedding_adapters import get_adapter
 from rag.access_control import get_permitted_datasources_for_user
 from rag.audit import log_retrieve_event
 from settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Matches the prefix used by ingest.py when storing documents.
-DOCUMENT_PREFIX = "検索文書: "
+
+def _current_adapter():
+    name = settings.embedding_model_name
+    if not isinstance(name, str):
+        name = "cl-nagoya/ruri-v3-310m"
+    return get_adapter(name)
 
 
 async def get_relevant_context(
@@ -37,6 +42,7 @@ async def get_relevant_context(
         return ""
 
     k = n_results if n_results is not None else settings.rag_top_k
+    adapter = _current_adapter()
 
     permitted = get_permitted_datasources_for_user(user)
     if not permitted:
@@ -48,14 +54,13 @@ async def get_relevant_context(
         return ""
 
     # Use embed_documents (not embed_query) to avoid internal prefix handling
-    qvec = get_embeddings().embed_documents([QUERY_PREFIX + query])[0]
+    qvec = get_embeddings(role="query").embed_documents([adapter.query_prefix + query])[0]
 
     client = get_chroma_client()
 
-    # ruri-v3-310m embeddings are L2-normalized (see models/embeddings.py
-    # encode_kwargs={"normalize_embeddings": True}). ChromaDB uses L2 by
-    # default. For unit vectors, L2² = 2 - 2·cos, so ordering by L2 is
-    # monotone-equivalent to ordering by cosine similarity.
+    # Embeddings are L2-normalized (encode_kwargs={"normalize_embeddings": True}).
+    # ChromaDB uses L2 by default. For unit vectors, L2² = 2 - 2·cos, so
+    # ordering by L2 is monotone-equivalent to ordering by cosine similarity.
     # Cross-collection merge by raw L2 distance is therefore valid.
     candidates: list[tuple[float, int, str]] = []  # (distance, col_idx, text)
 
@@ -75,7 +80,7 @@ async def get_relevant_context(
         dists = (res.get("distances") or [[]])[0]
 
         for doc, dist in zip(docs, dists):
-            clean = doc.removeprefix(DOCUMENT_PREFIX)
+            clean = doc.removeprefix(adapter.document_prefix)
             candidates.append((dist, idx, clean))
 
     candidates.sort(key=lambda t: (t[0], t[1]))
