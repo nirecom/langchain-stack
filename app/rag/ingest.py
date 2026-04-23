@@ -12,13 +12,20 @@ from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from models.embeddings import get_embeddings
+from models.embedding_adapters import get_adapter
 from models.chroma import get_or_create_collection
 from settings import settings
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls", ".txt", ".md", ".pptx", ".docx", ".doc"}
-from models.embeddings import DOCUMENT_PREFIX
+
+
+def _current_adapter():
+    name = settings.embedding_model_name
+    if not isinstance(name, str):
+        name = "cl-nagoya/ruri-v3-310m"
+    return get_adapter(name)
 
 
 def _load_documents(file_path: Path):
@@ -116,7 +123,8 @@ def ingest_file(file_path: Path, datasource: str, *, original_filename: str | No
         return 0
 
     collection = get_or_create_collection(datasource)
-    embeddings = get_embeddings()
+    embeddings = get_embeddings(role="ingest")
+    adapter = _current_adapter()
     now = datetime.now(timezone.utc).isoformat()
 
     # Delete existing chunks for this file (duplicate ingestion handling)
@@ -126,7 +134,7 @@ def ingest_file(file_path: Path, datasource: str, *, original_filename: str | No
         logger.info("Deleted %d existing chunks for %s", len(existing["ids"]), source_name)
 
     # Prepare texts with prefix and metadata
-    texts = [DOCUMENT_PREFIX + chunk.page_content for chunk in chunks]
+    texts = [adapter.document_prefix + chunk.page_content for chunk in chunks]
     vectors = embeddings.embed_documents(texts)
     ids = [f"{source_name}_{i}" for i in range(len(chunks))]
     metadatas = [

@@ -15,7 +15,7 @@ Embeddings: cl-nagoya/ruri-v3-310m (Japanese-optimized, JMTEB top-tier)
 """
 import logging
 from ragas import SingleTurnSample
-from ragas.metrics import ResponseRelevancy
+from ragas.metrics import ResponseRelevancy, Faithfulness, ContextPrecision
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from models.provider import get_judge
@@ -29,6 +29,14 @@ def _get_metric():
     judge_llm = LangchainLLMWrapper(get_judge())
     embeddings = LangchainEmbeddingsWrapper(get_embeddings())
     return ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
+
+
+def _get_faithfulness_metric():
+    return Faithfulness(llm=LangchainLLMWrapper(get_judge()))
+
+
+def _get_context_precision_metric():
+    return ContextPrecision(llm=LangchainLLMWrapper(get_judge()))
 
 
 async def compute_response_relevancy(question: str, answer: str) -> dict:
@@ -77,3 +85,64 @@ async def compute_response_relevancy(question: str, answer: str) -> dict:
             "verdict": "PASS",
             "threshold": threshold,
         }
+
+
+async def compute_faithfulness(question: str, context: str, answer: str) -> dict:
+    """
+    Compute RAGAS Faithfulness score (reference-free, LLM-judge).
+
+    Returns:
+        dict with keys: score (float), verdict (str), threshold (float)
+    """
+    threshold = settings.ragas_faithfulness_threshold
+    try:
+        metric = _get_faithfulness_metric()
+        sample = SingleTurnSample(
+            user_input=question,
+            retrieved_contexts=[context],
+            response=answer,
+        )
+        score = await metric.single_turn_ascore(sample)
+        verdict = "PASS" if score >= threshold else "FAIL"
+        logger.info(
+            "RAGAS Faithfulness: score=%.4f threshold=%.2f verdict=%s",
+            score, threshold, verdict,
+        )
+        return {"score": round(float(score), 4), "verdict": verdict, "threshold": threshold}
+    except Exception as e:
+        logger.error("RAGAS Faithfulness evaluation failed: %s", e)
+        return {"score": 0.0, "verdict": "PASS", "threshold": threshold}
+
+
+async def compute_context_precision(
+    question: str, context: str, answer: str, *, reference: str = ""
+) -> dict:
+    """
+    Compute RAGAS Context Precision score (reference-based, LLM-judge).
+
+    Requires reference (expected answer). Returns {"score": None} when reference is empty.
+
+    Returns:
+        dict with keys: score (float | None), verdict (str), threshold (float)
+    """
+    threshold = settings.ragas_context_precision_threshold
+    if not reference:
+        return {"score": None, "verdict": "SKIP", "threshold": threshold}
+    try:
+        metric = _get_context_precision_metric()
+        sample = SingleTurnSample(
+            user_input=question,
+            retrieved_contexts=[context],
+            response=answer,
+            reference=reference,
+        )
+        score = await metric.single_turn_ascore(sample)
+        verdict = "PASS" if score >= threshold else "FAIL"
+        logger.info(
+            "RAGAS ContextPrecision: score=%.4f threshold=%.2f verdict=%s",
+            score, threshold, verdict,
+        )
+        return {"score": round(float(score), 4), "verdict": verdict, "threshold": threshold}
+    except Exception as e:
+        logger.error("RAGAS ContextPrecision evaluation failed: %s", e)
+        return {"score": 0.0, "verdict": "PASS", "threshold": threshold}

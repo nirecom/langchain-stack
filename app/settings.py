@@ -45,9 +45,13 @@ class Settings(BaseSettings):
 
     # RAGAS evaluation
     ragas_response_relevancy_threshold: float = Field(default=0.7)
+    ragas_faithfulness_threshold: float = Field(default=0.7)
+    ragas_context_precision_threshold: float = Field(default=0.7)
 
     # Embedding model
-    embedding_model_name: str = Field(default="cl-nagoya/ruri-v3-310m")
+    embedding_model_name: str = Field(default="BAAI/bge-m3")
+    ingest_device: str = Field(default="cpu")
+    embedding_ab_suffix: str = Field(default="")
 
     # Ingestion
     ingest_chunk_size: int = Field(default=1000)
