@@ -28,7 +28,15 @@ def _get_metric():
     """Build metric fresh each call (judge endpoint may change after probe)."""
     judge_llm = LangchainLLMWrapper(get_judge())
     embeddings = LangchainEmbeddingsWrapper(get_embeddings())
-    return ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
+    metric = ResponseRelevancy(llm=judge_llm, embeddings=embeddings)
+    metric.question_generation.instruction = (
+        "Generate a question for the given answer and Identify if answer is noncommittal. "
+        "Give noncommittal as 1 if the answer is noncommittal and 0 if the answer is committal. "
+        "A noncommittal answer is one that is evasive, vague, or ambiguous. "
+        "For example, \"I don't know\" or \"I'm not sure\" are noncommittal answers. "
+        "IMPORTANT: Generate the question in the SAME LANGUAGE as the answer."
+    )
+    return metric
 
 
 def _get_faithfulness_metric():

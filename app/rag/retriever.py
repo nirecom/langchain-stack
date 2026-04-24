@@ -74,18 +74,23 @@ async def get_relevant_context(
         res = col.query(
             query_embeddings=[qvec],
             n_results=k,
-            include=["documents", "distances"],
+            include=["documents", "distances", "metadatas"],
         )
         docs = (res.get("documents") or [[]])[0]
         dists = (res.get("distances") or [[]])[0]
+        metas = (res.get("metadatas") or [[]])[0]
 
-        for doc, dist in zip(docs, dists):
+        for doc, dist, meta in zip(docs, dists, metas):
             clean = doc.removeprefix(adapter.document_prefix)
-            candidates.append((dist, idx, clean))
+            source = (meta or {}).get("source", "")
+            candidates.append((dist, idx, source, clean))
 
     candidates.sort(key=lambda t: (t[0], t[1]))
     top = candidates[:k]
 
     log_retrieve_event(user=user, datasources_queried=sorted(permitted), query=query, hits=len(top))
 
-    return "\n\n---\n\n".join(text for _, _, text in top) if top else ""
+    return "\n\n---\n\n".join(
+        f"[Source: {src}]\n{text}" if src else text
+        for _, _, src, text in top
+    ) if top else ""

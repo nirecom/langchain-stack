@@ -8,12 +8,22 @@ Phase 3E: SSE streaming variant (run_judge_chain_stream).
 import uuid
 import logging
 from collections.abc import AsyncGenerator
+from langchain_core.messages import SystemMessage, HumanMessage
 from models.provider import get_reasoner, probe_endpoints
 from evaluation.metrics import compute_response_relevancy
 from chains.judge import generate_feedback
 from settings import settings as app_settings
 
 logger = logging.getLogger(__name__)
+
+REASONER_SYSTEM_PROMPT = "Respond in the same language as the user's question."
+
+
+def _build_reasoner_messages(reasoner_input: str) -> list:
+    return [
+        SystemMessage(content=REASONER_SYSTEM_PROMPT),
+        HumanMessage(content=reasoner_input),
+    ]
 
 
 def _build_reasoner_input(
@@ -73,7 +83,7 @@ async def run_judge_chain(
             prompt, context, attempt, evaluation, feedback
         )
 
-        answer_msg = await reasoner.ainvoke(reasoner_input)
+        answer_msg = await reasoner.ainvoke(_build_reasoner_messages(reasoner_input))
         answer = answer_msg.content
 
         logger.info(
@@ -180,7 +190,7 @@ async def run_judge_chain_stream(
         if is_last_attempt:
             # Last attempt: stream tokens since this answer will be used regardless
             answer_chunks = []
-            async for chunk in reasoner.astream(reasoner_input):
+            async for chunk in reasoner.astream(_build_reasoner_messages(reasoner_input)):
                 token = chunk.content
                 if token:
                     answer_chunks.append(token)
@@ -188,7 +198,7 @@ async def run_judge_chain_stream(
             answer = "".join(answer_chunks)
         else:
             # Non-final: use ainvoke (need RAGAS verdict before committing)
-            answer_msg = await reasoner.ainvoke(reasoner_input)
+            answer_msg = await reasoner.ainvoke(_build_reasoner_messages(reasoner_input))
             answer = answer_msg.content
 
         logger.info(

@@ -179,7 +179,8 @@ def ingest_folder(datasource: str) -> dict:
         if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             continue
         try:
-            count = ingest_file(file_path, datasource)
+            relative = file_path.relative_to(folder)
+            count = ingest_file(file_path, datasource, original_filename=str(relative))
             total_chunks += count
             files_processed += 1
         except Exception as e:

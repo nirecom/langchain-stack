@@ -49,6 +49,7 @@ See `.env.example` for the full list. Key variables:
 | `CHAT_API_KEY_<USER>` | Per-user chat API key (KYOKO, NIRE, EDGE, LUTE) |
 | `EMBEDDING_MODEL_NAME` | Embedding model (default: `BAAI/bge-m3`) |
 | `INGEST_DEVICE` | Device for ingest embeddings: `cpu` (default) or `cuda` |
+| `RAG_TOP_K` | Number of chunks retrieved per query (default: `10`) |
 
 ## Daily Operations
 
