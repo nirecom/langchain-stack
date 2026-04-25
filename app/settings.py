@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     chroma_host: str = Field(default="chromadb")
     chroma_port: int = Field(default=8000)
 
+    # OpenSearch (Phase 4F+)
+    opensearch_url: str = Field(default="http://opensearch:9200")
+    os_index_prefix: str = Field(default="ls_")
+    vector_backend: str = Field(default="opensearch")
+    hybrid_pipeline_name: str = Field(default="hybrid-bm25-knn")
+    search_mode: str = Field(default="hybrid+header")
+
     # Judge settings
     max_judge_retries: int = Field(default=2)
 

@@ -1,17 +1,18 @@
 """
-ChromaDB retriever with ACL-scoped multi-collection search.
+OpenSearch retriever with ACL-scoped multi-index search and 4 query modes.
 
-Phase 4C: Queries permitted collections per user, merges results by distance.
-n_results is the final total hit count across all collections — each permitted
-collection is queried for up to n_results candidates, then the merged pool is
-truncated to n_results by ascending distance. Ties are broken by permitted-
-collection alphabetical order (stable sort).
+Modes (controlled by settings.search_mode):
+  dense         - kNN only
+  header+dense  - kNN + BM25 boost on title/file_name fields
+  hybrid        - BM25 (text) + kNN via search pipeline
+  hybrid+header - BM25 (text+title+file_name+section_path boosted) + kNN via pipeline
+
+ACL is enforced at the index level: each datasource maps to a separate index,
+and only permitted indices are queried.
 """
 import logging
 
-import chromadb.errors
-
-from models.chroma import get_chroma_client
+from models.opensearch import get_os_client, _index_name
 from models.embeddings import get_embeddings
 from models.embedding_adapters import get_adapter
 from rag.access_control import get_permitted_datasources_for_user
@@ -19,6 +20,8 @@ from rag.audit import log_retrieve_event
 from settings import settings
 
 logger = logging.getLogger(__name__)
+
+_MIN_KNN_K = 10  # prevents min_max normalizer from zeroing single-result queries
 
 
 def _current_adapter():
@@ -28,69 +31,139 @@ def _current_adapter():
     return get_adapter(name)
 
 
+def _build_dense(query_vector: list, query_text: str, k: int) -> dict:
+    effective_k = max(k, _MIN_KNN_K)
+    return {"query": {"knn": {"embedding": {"vector": query_vector, "k": effective_k}}}}
+
+
+def _build_header_dense(query_vector: list, query_text: str, k: int) -> dict:
+    effective_k = max(k, _MIN_KNN_K)
+    return {
+        "query": {
+            "bool": {
+                "must": [{"knn": {"embedding": {"vector": query_vector, "k": effective_k}}}],
+                "should": [
+                    {"match": {"title": {"query": query_text, "boost": 2.5}}},
+                    {"match": {"file_name": {"query": query_text, "boost": 2.0}}},
+                ],
+            }
+        }
+    }
+
+
+def _build_hybrid(query_vector: list, query_text: str, k: int) -> dict:
+    effective_k = max(k, _MIN_KNN_K)
+    return {
+        "query": {
+            "hybrid": {
+                "queries": [
+                    {"multi_match": {"query": query_text, "fields": ["text"]}},
+                    {"knn": {"embedding": {"vector": query_vector, "k": effective_k}}},
+                ]
+            }
+        },
+        "search_pipeline": settings.hybrid_pipeline_name,
+    }
+
+
+def _build_hybrid_header(query_vector: list, query_text: str, k: int) -> dict:
+    effective_k = max(k, _MIN_KNN_K)
+    return {
+        "query": {
+            "hybrid": {
+                "queries": [
+                    {
+                        "multi_match": {
+                            "query": query_text,
+                            "fields": [
+                                "text^1.0",
+                                "title^2.5",
+                                "file_name^2.0",
+                                "section_path^1.5",
+                            ],
+                        }
+                    },
+                    {"knn": {"embedding": {"vector": query_vector, "k": effective_k}}},
+                ]
+            }
+        },
+        "search_pipeline": settings.hybrid_pipeline_name,
+    }
+
+
+_QUERY_BUILDERS = {
+    "dense": _build_dense,
+    "header+dense": _build_header_dense,
+    "hybrid": _build_hybrid,
+    "hybrid+header": _build_hybrid_header,
+}
+
+
+def _format_hit(src: dict) -> str:
+    file_name = src.get("file_name", "")
+    section = src.get("section_path") or ""
+    text = src.get("text", "")
+    label = f"{file_name} | {section}" if section else file_name
+    return f"[Source: {label}]\n{text}" if label else text
+
+
 async def get_relevant_context(
     query: str,
     *,
     user: str,
     n_results: int | None = None,
+    search_mode: str | None = None,
 ) -> str:
     """
-    Retrieve RAG context for *query*, restricted to ACL-permitted collections
-    for *user*. Returns "" on failure or when no results are found.
+    Retrieve RAG context for *query*, restricted to ACL-permitted indices for *user*.
+    Returns "" on failure or when no results are found.
     """
     if not query.strip():
         return ""
 
     k = n_results if n_results is not None else settings.rag_top_k
+    mode = search_mode or settings.search_mode
     adapter = _current_adapter()
 
     permitted = get_permitted_datasources_for_user(user)
     if not permitted:
-        logger.warning(
-            "RAG: no datasources permitted for user '%s'", user,
+        logger.warning("RAG: no datasources permitted for user '%s'", user)
+        log_retrieve_event(
+            user=user, datasources_queried=[], query=query, hits=0,
+            status="no_permitted_datasources",
         )
-        log_retrieve_event(user=user, datasources_queried=[], query=query, hits=0,
-                           status="no_permitted_datasources")
         return ""
 
-    # Use embed_documents (not embed_query) to avoid internal prefix handling
     qvec = get_embeddings(role="query").embed_documents([adapter.query_prefix + query])[0]
 
-    client = get_chroma_client()
+    indices = [_index_name(ds) for ds in sorted(permitted)]
+    builder = _QUERY_BUILDERS.get(mode, _build_hybrid_header)
+    body = builder(qvec, query, k)
+    body["size"] = k
+    body["_source"] = ["text", "file_name", "section_path", "source"]
 
-    # Embeddings are L2-normalized (encode_kwargs={"normalize_embeddings": True}).
-    # ChromaDB uses L2 by default. For unit vectors, L2² = 2 - 2·cos, so
-    # ordering by L2 is monotone-equivalent to ordering by cosine similarity.
-    # Cross-collection merge by raw L2 distance is therefore valid.
-    candidates: list[tuple[float, int, str]] = []  # (distance, col_idx, text)
-
-    for idx, ds in enumerate(sorted(permitted)):
-        try:
-            col = client.get_collection(name=ds)
-        except chromadb.errors.NotFoundError:
-            logger.warning("RAG: collection '%s' not found — skipping", ds)
-            continue
-
-        res = col.query(
-            query_embeddings=[qvec],
-            n_results=k,
-            include=["documents", "distances", "metadatas"],
+    client = get_os_client()
+    try:
+        resp = client.search(
+            index=",".join(indices),
+            body=body,
+            search_type="dfs_query_then_fetch",
+            params={"ignore_unavailable": "true"},
         )
-        docs = (res.get("documents") or [[]])[0]
-        dists = (res.get("distances") or [[]])[0]
-        metas = (res.get("metadatas") or [[]])[0]
+    except Exception as e:
+        logger.error("OpenSearch query failed: %s", e)
+        log_retrieve_event(
+            user=user, datasources_queried=sorted(permitted),
+            query=query, hits=0, status="error", error=str(e),
+        )
+        return ""
 
-        for doc, dist, meta in zip(docs, dists, metas):
-            clean = doc.removeprefix(adapter.document_prefix)
-            source = (meta or {}).get("source", "")
-            candidates.append((dist, idx, source, clean))
+    hits = (resp.get("hits") or {}).get("hits") or []
+    top = hits[:k]
 
-    candidates.sort(key=lambda t: (t[0], t[1]))
-    top = candidates[:k]
+    log_retrieve_event(
+        user=user, datasources_queried=sorted(permitted),
+        query=query, hits=len(top),
+    )
 
-    log_retrieve_event(user=user, datasources_queried=sorted(permitted), query=query, hits=len(top))
-
-    return "\n\n---\n\n".join(
-        f"[Source: {src}]\n{text}" if src else text
-        for _, _, src, text in top
-    ) if top else ""
+    return "\n\n---\n\n".join(_format_hit(h["_source"]) for h in top) if top else ""

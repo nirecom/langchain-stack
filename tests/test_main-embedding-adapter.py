@@ -95,6 +95,7 @@ class TestEmbeddingAdapterDataclass:
             document_prefix="doc: ",
             query_prefix="query: ",
             normalize=True,
+            dimension=768,
         )
         assert adapter.model_name == "test/model"
         assert adapter.document_prefix == "doc: "
