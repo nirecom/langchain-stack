@@ -11,6 +11,7 @@ ACL is enforced at the index level: each datasource maps to a separate index,
 and only permitted indices are queried.
 """
 import logging
+import re
 
 from models.opensearch import get_os_client, _index_name
 from models.embeddings import get_embeddings
@@ -22,6 +23,24 @@ from settings import settings
 logger = logging.getLogger(__name__)
 
 _MIN_KNN_K = 10  # prevents min_max normalizer from zeroing single-result queries
+
+_COUNT_PATTERNS = re.compile(r"何件|何個|いくつ|何本|何冊|何例|件数|何事例|何ケース")
+
+
+def _is_counting_query(query: str) -> bool:
+    return bool(_COUNT_PATTERNS.search(query))
+
+
+def _build_title_bm25(query_vector: list, query_text: str, k: int) -> dict:
+    return {
+        "query": {
+            "multi_match": {
+                "query": query_text,
+                "fields": ["title^3.0", "file_name^3.0", "section_path^1.5"],
+                "type": "best_fields",
+            }
+        }
+    }
 
 
 def _current_adapter():
@@ -125,6 +144,12 @@ async def get_relevant_context(
     mode = search_mode or settings.search_mode
     adapter = _current_adapter()
 
+    if _is_counting_query(query):
+        builder = _build_title_bm25
+        k = max(k, 30)
+    else:
+        builder = _QUERY_BUILDERS.get(mode, _build_hybrid_header)
+
     permitted = get_permitted_datasources_for_user(user)
     if not permitted:
         logger.warning("RAG: no datasources permitted for user '%s'", user)
@@ -137,7 +162,6 @@ async def get_relevant_context(
     qvec = get_embeddings(role="query").embed_documents([adapter.query_prefix + query])[0]
 
     indices = [_index_name(ds) for ds in sorted(permitted)]
-    builder = _QUERY_BUILDERS.get(mode, _build_hybrid_header)
     body = builder(qvec, query, k)
     body["size"] = k
     body["_source"] = ["text", "file_name", "section_path", "source"]

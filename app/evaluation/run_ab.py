@@ -327,7 +327,7 @@ def _write_csv(rows: list[dict], output_path: str) -> None:
         return
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["model", "datasource", "collection", "query", "language",
+    fields = ["model", "n_results", "datasource", "collection", "query", "language",
               "context_found", "retrieve_ms", "search_mode", "backend",
               "relevancy", "faithfulness", "context_precision", "context_recall",
               "source_hit_at_k"]
@@ -343,7 +343,7 @@ async def run_ab(
     model_shorts: list[str],
     queries_path: str,
     output_path: str,
-    n_results: int,
+    top_k_values: list[int],
     skip_ingest: bool,
     search_modes: list[str] | None = None,
     backend: str = "opensearch",
@@ -384,23 +384,25 @@ async def run_ab(
         else:
             logger.info("Skipping ingest (--skip-ingest)")
 
-        for i, query_item in enumerate(queries, 1):
-            for mode in effective_modes:
-                logger.info(
-                    "  [%d/%d] mode=%s %s query: %s",
-                    i, len(queries), mode or "chroma",
-                    query_item.get("language", "?"), query_item["query"][:60],
-                )
-                row = await _evaluate_query(
-                    query_item, collection, hf_name, n_results,
-                    backend=backend,
-                    search_mode=mode or ("dense" if backend == "chroma" else "hybrid+header"),
-                    datasource=datasource,
-                )
-                row["model"] = short
-                row["datasource"] = datasource
-                row["collection"] = collection
-                all_rows.append(row)
+        for top_k in top_k_values:
+            for i, query_item in enumerate(queries, 1):
+                for mode in effective_modes:
+                    logger.info(
+                        "  [top_k=%d %d/%d] mode=%s %s query: %s",
+                        top_k, i, len(queries), mode or "chroma",
+                        query_item.get("language", "?"), query_item["query"][:60],
+                    )
+                    row = await _evaluate_query(
+                        query_item, collection, hf_name, top_k,
+                        backend=backend,
+                        search_mode=mode or ("dense" if backend == "chroma" else "hybrid+header"),
+                        datasource=datasource,
+                    )
+                    row["model"] = short
+                    row["n_results"] = top_k
+                    row["datasource"] = datasource
+                    row["collection"] = collection
+                    all_rows.append(row)
 
         logger.info(
             "Model '%s' done: relevancy=%.3f faith=%.3f cp=%.3f",
@@ -411,7 +413,7 @@ async def run_ab(
         )
 
     _write_csv(all_rows, output_path)
-    _print_summary(all_rows, model_shorts)
+    _print_summary(all_rows, model_shorts, top_k_values)
 
 
 def _mean(values: list) -> float:
@@ -419,27 +421,28 @@ def _mean(values: list) -> float:
     return sum(valid) / len(valid) if valid else 0.0
 
 
-def _print_summary(rows: list[dict], model_shorts: list[str]) -> None:
+def _print_summary(rows: list[dict], model_shorts: list[str], top_k_values: list[int]) -> None:
     print("\n=== A/B Evaluation Summary ===")
-    header = f"{'Model':<10} {'Lang':<5} {'Relevancy':>10} {'Faithful':>10} {'CtxPrec':>10} {'CtxRecall':>10} {'p50ms':>7}"
+    header = f"{'Model':<10} {'TopK':>5} {'Lang':<5} {'Relevancy':>10} {'Faithful':>10} {'CtxPrec':>10} {'CtxRecall':>10} {'p50ms':>7}"
     print(header)
     print("-" * len(header))
 
     for short in model_shorts:
-        for lang in ("en", "ja"):
-            subset = [r for r in rows if r["model"] == short and r["language"] == lang]
-            if not subset:
-                continue
-            rel = _mean([r["relevancy"] for r in subset])
-            faith = _mean([r["faithfulness"] for r in subset])
-            cp = _mean([r["context_precision"] for r in subset])
-            cr = _mean([r["context_recall"] for r in subset])
-            ms_vals = sorted(r["retrieve_ms"] for r in subset)
-            p50 = ms_vals[len(ms_vals) // 2] if ms_vals else 0
-            print(
-                f"{short:<10} {lang:<5} {rel:>10.3f} {faith:>10.3f} {cp:>10.3f} "
-                f"{cr if cr else '':>10} {p50:>7}"
-            )
+        for top_k in top_k_values:
+            for lang in ("en", "ja"):
+                subset = [r for r in rows if r["model"] == short and r["n_results"] == top_k and r["language"] == lang]
+                if not subset:
+                    continue
+                rel = _mean([r["relevancy"] for r in subset])
+                faith = _mean([r["faithfulness"] for r in subset])
+                cp = _mean([r["context_precision"] for r in subset])
+                cr = _mean([r["context_recall"] for r in subset])
+                ms_vals = sorted(r["retrieve_ms"] for r in subset)
+                p50 = ms_vals[len(ms_vals) // 2] if ms_vals else 0
+                print(
+                    f"{short:<10} {top_k:>5} {lang:<5} {rel:>10.3f} {faith:>10.3f} {cp:>10.3f} "
+                    f"{cr if cr else '':>10} {p50:>7}"
+                )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -463,8 +466,8 @@ def _parse_args() -> argparse.Namespace:
         help="Output CSV path (default: docs/embedding-ab-report.csv)",
     )
     parser.add_argument(
-        "--n-results", type=int, default=3,
-        help="Number of chunks to retrieve per query (default: 3)",
+        "--top-k-values", default="10",
+        help="Comma-separated top_k values to sweep (default: 10). e.g.: 5,10,15,20,30",
     )
     parser.add_argument(
         "--skip-ingest", action="store_true",
@@ -503,13 +506,15 @@ if __name__ == "__main__":
         else None
     )
 
+    top_k_values = [int(k.strip()) for k in args.top_k_values.split(",")]
+
     asyncio.run(
         run_ab(
             datasource=args.datasource,
             model_shorts=shorts,
             queries_path=args.queries,
             output_path=args.output,
-            n_results=args.n_results,
+            top_k_values=top_k_values,
             skip_ingest=args.skip_ingest,
             search_modes=search_modes,
             backend=args.backend,
