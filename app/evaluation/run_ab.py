@@ -61,11 +61,7 @@ def _collection_name(datasource: str, model_short: str) -> str:
 
 
 def _ingest_datasource_into_collection(src_datasource: str, collection_name: str) -> dict:
-    """
-    Ingest all files from /data/documents/{src_datasource}/ into {collection_name}.
-
-    Returns dict with total_chunks, files_processed, errors.
-    """
+    """Ingest into OpenSearch (datasource → ls_{collection_name} index)."""
     from rag.ingest import ingest_file
 
     folder = Path("/data/documents") / src_datasource
@@ -84,6 +80,58 @@ def _ingest_datasource_into_collection(src_datasource: str, collection_name: str
         try:
             count = ingest_file(file_path, collection_name)
             total_chunks += count
+            files_processed += 1
+        except Exception as exc:
+            logger.error("Failed to ingest %s: %s", file_path, exc)
+            errors.append({"file": str(file_path), "error": str(exc)})
+
+    return {"total_chunks": total_chunks, "files_processed": files_processed, "errors": errors}
+
+
+def _ingest_datasource_into_chroma(src_datasource: str, collection_name: str) -> dict:
+    """Ingest into ChromaDB for Chroma baseline comparison (F-10 only)."""
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from models.chroma import get_or_create_collection
+    from models.embeddings import get_embeddings
+    from models.embedding_adapters import get_adapter
+    from rag.ingest import _load_with_headers, SUPPORTED_EXTENSIONS as _EXTS
+    from settings import settings as _s
+
+    folder = Path("/data/documents") / src_datasource
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Document folder not found: {folder}")
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=_s.ingest_chunk_size,
+        chunk_overlap=_s.ingest_chunk_overlap,
+    )
+    col = get_or_create_collection(collection_name)
+    if col.count() > 0:
+        col.delete(where={"datasource": {"$eq": src_datasource}})
+    embeddings = get_embeddings(role="ingest")
+    adapter = get_adapter(_s.embedding_model_name)
+
+    total_chunks = 0
+    files_processed = 0
+    errors: list[dict] = []
+
+    for file_path in sorted(folder.rglob("*")):
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() not in _EXTS:
+            continue
+        try:
+            source_name = str(file_path.relative_to(folder))
+            docs, _, _ = _load_with_headers(file_path)
+            chunks = splitter.split_documents(docs)
+            if not chunks:
+                continue
+            texts = [adapter.document_prefix + c.page_content for c in chunks]
+            vectors = embeddings.embed_documents(texts)
+            ids = [f"{source_name}::{i}" for i in range(len(chunks))]
+            metadatas = [{"datasource": src_datasource, "source": source_name} for _ in chunks]
+            col.add(ids=ids, embeddings=vectors, documents=texts, metadatas=metadatas)
+            total_chunks += len(chunks)
             files_processed += 1
         except Exception as exc:
             logger.error("Failed to ingest %s: %s", file_path, exc)
@@ -320,9 +368,12 @@ async def run_ab(
         _reset_embedding_singletons()
 
         if not skip_ingest:
-            target = datasource if backend == "opensearch" else collection
-            logger.info("Ingesting '%s' → '%s'", datasource, target)
-            result = _ingest_datasource_into_collection(datasource, target)
+            if backend == "chroma":
+                logger.info("Ingesting '%s' → Chroma collection '%s'", datasource, collection)
+                result = _ingest_datasource_into_chroma(datasource, collection)
+            else:
+                logger.info("Ingesting '%s' → OpenSearch index 'ls_%s'", datasource, datasource)
+                result = _ingest_datasource_into_collection(datasource, datasource)
             logger.info(
                 "Ingest complete: %d chunks from %d files (%d errors)",
                 result["total_chunks"], result["files_processed"], len(result["errors"]),
@@ -343,7 +394,7 @@ async def run_ab(
                 row = await _evaluate_query(
                     query_item, collection, hf_name, n_results,
                     backend=backend,
-                    search_mode=mode or "hybrid+header",
+                    search_mode=mode or ("dense" if backend == "chroma" else "hybrid+header"),
                     datasource=datasource,
                 )
                 row["model"] = short
