@@ -9,6 +9,7 @@ LLM-as-a-Judge chain with RAG support, exposed as an OpenAI-compatible API.
 - **User-based ACL**: Each user has an individual API key mapped to permitted datasources.
 - **Streaming**: SSE streaming (`stream: true`) supported.
 - **Audit logging**: Ingest and retrieval events logged to JSONL with user attribution.
+- **Tracing**: Langfuse v3 self-hosted traces LLM I/O, latency, and retrieval results per query.
 - **OpenAI-compatible**: Drop-in replacement endpoint for chat completions.
 
 ## Architecture
@@ -17,7 +18,8 @@ LLM-as-a-Judge chain with RAG support, exposed as an OpenAI-compatible API.
 Open WebUI ───┐
 Other tools ──┤──→ langchain-api:8100 ──→ LiteLLM Proxy ──→ LLM backends
               │         │
-              │         └──→ ChromaDB:8200 (RAG vector search)
+              │         └──→ OpenSearch:9200 (RAG vector + hybrid search)
+              │         └──→ Langfuse:13000  (tracing)
 ```
 
 All LLM calls go through an external LiteLLM Proxy on LAN.

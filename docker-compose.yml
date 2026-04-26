@@ -122,6 +122,161 @@ services:
     networks:
       - langchain-net
 
+  langfuse-postgres:
+    image: postgres:16-alpine
+    container_name: langfuse-postgres
+    environment:
+      - POSTGRES_PASSWORD=${LANGFUSE_POSTGRES_PASSWORD}
+      - POSTGRES_DB=langfuse
+    volumes:
+      - ./data/langfuse-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: langfuse-clickhouse
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./data/langfuse-clickhouse/data:/var/lib/clickhouse
+      - ./data/langfuse-clickhouse/logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  langfuse-minio:
+    # TODO: pin to specific RELEASE tag after first pull: docker inspect minio/minio:latest --format '{{index .RepoDigests 0}}'
+    image: minio/minio:latest
+    container_name: langfuse-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=${LANGFUSE_MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./data/langfuse-minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  langfuse-minio-createbuckets:
+    # TODO: pin to same RELEASE tag as langfuse-minio after first pull
+    image: minio/mc:latest
+    container_name: langfuse-minio-createbuckets
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    environment:
+      - MINIO_ROOT_PASSWORD=${LANGFUSE_MINIO_ROOT_PASSWORD}
+    entrypoint: ["/bin/sh", "-c", "mc alias set minio http://langfuse-minio:9000 minio $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing minio/langfuse"]
+    networks:
+      - langchain-net
+
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    command: redis-server --requirepass ${LANGFUSE_REDIS_AUTH}
+    volumes:
+      - ./data/langfuse-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${LANGFUSE_REDIS_AUTH}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    environment:
+      - DATABASE_URL=postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/langfuse
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://langfuse-clickhouse:9000
+      - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_ENABLED=true
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://langfuse-minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${LANGFUSE_MINIO_ROOT_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - REDIS_HOST=langfuse-redis
+      - REDIS_PORT=6379
+      - REDIS_AUTH=${LANGFUSE_REDIS_AUTH}
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio-createbuckets:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: langfuse-web
+    ports:
+      - "127.0.0.1:${LANGFUSE_WEB_PORT:-13000}:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/langfuse
+      - NEXTAUTH_URL=${LANGFUSE_NEXTAUTH_URL:-http://127.0.0.1:13000}
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://langfuse-clickhouse:9000
+      - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_ENABLED=true
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://langfuse-minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${LANGFUSE_MINIO_ROOT_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - REDIS_HOST=langfuse-redis
+      - REDIS_PORT=6379
+      - REDIS_AUTH=${LANGFUSE_REDIS_AUTH}
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio-createbuckets:
+        condition: service_completed_successfully
+      langfuse-worker:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
 networks:
   langchain-net:
     driver: bridge
