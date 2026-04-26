@@ -61,11 +61,7 @@ def _collection_name(datasource: str, model_short: str) -> str:
 
 
 def _ingest_datasource_into_collection(src_datasource: str, collection_name: str) -> dict:
-    """
-    Ingest all files from /data/documents/{src_datasource}/ into {collection_name}.
-
-    Returns dict with total_chunks, files_processed, errors.
-    """
+    """Ingest into OpenSearch (datasource → ls_{collection_name} index)."""
     from rag.ingest import ingest_file
 
     folder = Path("/data/documents") / src_datasource
@@ -92,13 +88,65 @@ def _ingest_datasource_into_collection(src_datasource: str, collection_name: str
     return {"total_chunks": total_chunks, "files_processed": files_processed, "errors": errors}
 
 
+def _ingest_datasource_into_chroma(src_datasource: str, collection_name: str) -> dict:
+    """Ingest into ChromaDB for Chroma baseline comparison (F-10 only)."""
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from models.chroma import get_or_create_collection
+    from models.embeddings import get_embeddings
+    from models.embedding_adapters import get_adapter
+    from rag.ingest import _load_with_headers, SUPPORTED_EXTENSIONS as _EXTS
+    from settings import settings as _s
+
+    folder = Path("/data/documents") / src_datasource
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Document folder not found: {folder}")
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=_s.ingest_chunk_size,
+        chunk_overlap=_s.ingest_chunk_overlap,
+    )
+    col = get_or_create_collection(collection_name)
+    if col.count() > 0:
+        col.delete(where={"datasource": {"$eq": src_datasource}})
+    embeddings = get_embeddings(role="ingest")
+    adapter = get_adapter(_s.embedding_model_name)
+
+    total_chunks = 0
+    files_processed = 0
+    errors: list[dict] = []
+
+    for file_path in sorted(folder.rglob("*")):
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() not in _EXTS:
+            continue
+        try:
+            source_name = str(file_path.relative_to(folder))
+            docs, _, _ = _load_with_headers(file_path)
+            chunks = splitter.split_documents(docs)
+            if not chunks:
+                continue
+            texts = [adapter.document_prefix + c.page_content for c in chunks]
+            vectors = embeddings.embed_documents(texts)
+            ids = [f"{source_name}::{i}" for i in range(len(chunks))]
+            metadatas = [{"datasource": src_datasource, "source": source_name} for _ in chunks]
+            col.add(ids=ids, embeddings=vectors, documents=texts, metadatas=metadatas)
+            total_chunks += len(chunks)
+            files_processed += 1
+        except Exception as exc:
+            logger.error("Failed to ingest %s: %s", file_path, exc)
+            errors.append({"file": str(file_path), "error": str(exc)})
+
+    return {"total_chunks": total_chunks, "files_processed": files_processed, "errors": errors}
+
+
 async def _retrieve_from_collection(
     query: str,
     collection_name: str,
     model_name: str,
     n_results: int,
 ) -> str:
-    """Retrieve context directly from a named collection, bypassing ACL."""
+    """Retrieve context from a ChromaDB collection, bypassing ACL."""
     import chromadb.errors
     from models.chroma import get_chroma_client
     from models.embeddings import get_embeddings
@@ -121,6 +169,42 @@ async def _retrieve_from_collection(
     return "\n\n---\n\n".join(doc.removeprefix(adapter.document_prefix) for doc in docs)
 
 
+async def _retrieve_from_opensearch(
+    query: str,
+    datasource: str,
+    model_name: str,
+    search_mode: str,
+    n_results: int,
+) -> tuple[str, list[str]]:
+    """Retrieve context from OpenSearch. Returns (context_text, source_filenames)."""
+    from models.opensearch import get_os_client, _index_name
+    from models.embeddings import get_embeddings
+    from rag.retriever import _QUERY_BUILDERS, _format_hit
+
+    adapter = get_adapter(model_name)
+    qvec = get_embeddings(role="query").embed_documents([adapter.query_prefix + query])[0]
+    builder = _QUERY_BUILDERS.get(search_mode, _QUERY_BUILDERS["hybrid+header"])
+    body = builder(qvec, query, n_results)
+    body["size"] = n_results
+    body["_source"] = ["text", "file_name", "section_path", "source"]
+
+    client = get_os_client()
+    try:
+        resp = client.search(
+            index=_index_name(datasource),
+            body=body,
+            search_type="dfs_query_then_fetch",
+        )
+    except Exception as exc:
+        logger.error("OpenSearch query failed: %s", exc)
+        return "", []
+
+    hits = (resp.get("hits") or {}).get("hits") or []
+    sources = [h["_source"].get("source", "") for h in hits]
+    context = "\n\n---\n\n".join(_format_hit(h["_source"]) for h in hits)
+    return context, sources
+
+
 async def _generate_answer(question: str, context: str) -> str:
     from langchain_core.messages import HumanMessage
     from models.provider import get_reasoner
@@ -139,6 +223,10 @@ async def _evaluate_query(
     collection_name: str,
     model_name: str,
     n_results: int,
+    *,
+    backend: str = "opensearch",
+    search_mode: str = "hybrid+header",
+    datasource: str = "",
 ) -> dict:
     """Run retrieval + answer generation + RAGAS metrics for a single query."""
     from evaluation.metrics import (
@@ -150,10 +238,21 @@ async def _evaluate_query(
     question = query_item["query"]
     lang = query_item.get("language", "unknown")
     expected = query_item.get("expected_answer", "")
+    expected_source = query_item.get("expected_source", "")
 
     t0 = time.monotonic()
-    context = await _retrieve_from_collection(question, collection_name, model_name, n_results)
+    if backend == "opensearch":
+        context, retrieved_sources = await _retrieve_from_opensearch(
+            question, datasource, model_name, search_mode, n_results,
+        )
+    else:
+        context = await _retrieve_from_collection(question, collection_name, model_name, n_results)
+        retrieved_sources = []
     retrieve_ms = (time.monotonic() - t0) * 1000
+
+    source_hit: int | None = None
+    if backend == "opensearch" and expected_source:
+        source_hit = 1 if any(expected_source in s for s in retrieved_sources) else 0
 
     if not context:
         return {
@@ -161,10 +260,13 @@ async def _evaluate_query(
             "language": lang,
             "context_found": False,
             "retrieve_ms": round(retrieve_ms),
+            "search_mode": search_mode,
+            "backend": backend,
             "relevancy": None,
             "faithfulness": None,
             "context_precision": None,
             "context_recall": None,
+            "source_hit_at_k": source_hit,
             "answer": "",
         }
 
@@ -199,10 +301,13 @@ async def _evaluate_query(
         "language": lang,
         "context_found": True,
         "retrieve_ms": round(retrieve_ms),
+        "search_mode": search_mode,
+        "backend": backend,
         "relevancy": rel["score"],
         "faithfulness": faith["score"],
         "context_precision": cp["score"],
         "context_recall": cr,
+        "source_hit_at_k": source_hit,
         "answer": answer,
     }
 
@@ -222,9 +327,10 @@ def _write_csv(rows: list[dict], output_path: str) -> None:
         return
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["model", "datasource", "collection", "query", "language",
-              "context_found", "retrieve_ms",
-              "relevancy", "faithfulness", "context_precision", "context_recall"]
+    fields = ["model", "n_results", "datasource", "collection", "query", "language",
+              "context_found", "retrieve_ms", "search_mode", "backend",
+              "relevancy", "faithfulness", "context_precision", "context_recall",
+              "source_hit_at_k"]
     with open(out, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
@@ -237,8 +343,11 @@ async def run_ab(
     model_shorts: list[str],
     queries_path: str,
     output_path: str,
-    n_results: int,
+    top_k_values: list[int],
     skip_ingest: bool,
+    search_modes: list[str] | None = None,
+    backend: str = "opensearch",
+    header_source: str = "loader",
 ) -> None:
     queries = _load_queries(queries_path, datasource)
     if not queries:
@@ -246,20 +355,25 @@ async def run_ab(
         return
 
     logger.info("Loaded %d queries for datasource '%s'", len(queries), datasource)
+    effective_modes = search_modes or (["hybrid+header"] if backend == "opensearch" else [None])
     all_rows: list[dict] = []
 
     for short in model_shorts:
         hf_name = MODEL_SHORTCUTS[short]
         collection = _collection_name(datasource, short)
 
-        logger.info("=== Model: %s (%s) ===", short, hf_name)
+        logger.info("=== Model: %s (%s) backend=%s ===", short, hf_name, backend)
 
         settings.embedding_model_name = hf_name
         _reset_embedding_singletons()
 
         if not skip_ingest:
-            logger.info("Ingesting '%s' → collection '%s'", datasource, collection)
-            result = _ingest_datasource_into_collection(datasource, collection)
+            if backend == "chroma":
+                logger.info("Ingesting '%s' → Chroma collection '%s'", datasource, collection)
+                result = _ingest_datasource_into_chroma(datasource, collection)
+            else:
+                logger.info("Ingesting '%s' → OpenSearch index 'ls_%s'", datasource, datasource)
+                result = _ingest_datasource_into_collection(datasource, datasource)
             logger.info(
                 "Ingest complete: %d chunks from %d files (%d errors)",
                 result["total_chunks"], result["files_processed"], len(result["errors"]),
@@ -268,18 +382,27 @@ async def run_ab(
                 for err in result["errors"]:
                     logger.warning("  Ingest error: %s — %s", err["file"], err["error"])
         else:
-            logger.info("Skipping ingest (--skip-ingest); using existing collection '%s'", collection)
+            logger.info("Skipping ingest (--skip-ingest)")
 
-        for i, query_item in enumerate(queries, 1):
-            logger.info(
-                "  [%d/%d] %s query: %s",
-                i, len(queries), query_item.get("language", "?"), query_item["query"][:60],
-            )
-            row = await _evaluate_query(query_item, collection, hf_name, n_results)
-            row["model"] = short
-            row["datasource"] = datasource
-            row["collection"] = collection
-            all_rows.append(row)
+        for top_k in top_k_values:
+            for i, query_item in enumerate(queries, 1):
+                for mode in effective_modes:
+                    logger.info(
+                        "  [top_k=%d %d/%d] mode=%s %s query: %s",
+                        top_k, i, len(queries), mode or "chroma",
+                        query_item.get("language", "?"), query_item["query"][:60],
+                    )
+                    row = await _evaluate_query(
+                        query_item, collection, hf_name, top_k,
+                        backend=backend,
+                        search_mode=mode or ("dense" if backend == "chroma" else "hybrid+header"),
+                        datasource=datasource,
+                    )
+                    row["model"] = short
+                    row["n_results"] = top_k
+                    row["datasource"] = datasource
+                    row["collection"] = collection
+                    all_rows.append(row)
 
         logger.info(
             "Model '%s' done: relevancy=%.3f faith=%.3f cp=%.3f",
@@ -290,7 +413,7 @@ async def run_ab(
         )
 
     _write_csv(all_rows, output_path)
-    _print_summary(all_rows, model_shorts)
+    _print_summary(all_rows, model_shorts, top_k_values)
 
 
 def _mean(values: list) -> float:
@@ -298,27 +421,28 @@ def _mean(values: list) -> float:
     return sum(valid) / len(valid) if valid else 0.0
 
 
-def _print_summary(rows: list[dict], model_shorts: list[str]) -> None:
+def _print_summary(rows: list[dict], model_shorts: list[str], top_k_values: list[int]) -> None:
     print("\n=== A/B Evaluation Summary ===")
-    header = f"{'Model':<10} {'Lang':<5} {'Relevancy':>10} {'Faithful':>10} {'CtxPrec':>10} {'CtxRecall':>10} {'p50ms':>7}"
+    header = f"{'Model':<10} {'TopK':>5} {'Lang':<5} {'Relevancy':>10} {'Faithful':>10} {'CtxPrec':>10} {'CtxRecall':>10} {'p50ms':>7}"
     print(header)
     print("-" * len(header))
 
     for short in model_shorts:
-        for lang in ("en", "ja"):
-            subset = [r for r in rows if r["model"] == short and r["language"] == lang]
-            if not subset:
-                continue
-            rel = _mean([r["relevancy"] for r in subset])
-            faith = _mean([r["faithfulness"] for r in subset])
-            cp = _mean([r["context_precision"] for r in subset])
-            cr = _mean([r["context_recall"] for r in subset])
-            ms_vals = sorted(r["retrieve_ms"] for r in subset)
-            p50 = ms_vals[len(ms_vals) // 2] if ms_vals else 0
-            print(
-                f"{short:<10} {lang:<5} {rel:>10.3f} {faith:>10.3f} {cp:>10.3f} "
-                f"{cr if cr else '':>10} {p50:>7}"
-            )
+        for top_k in top_k_values:
+            for lang in ("en", "ja"):
+                subset = [r for r in rows if r["model"] == short and r["n_results"] == top_k and r["language"] == lang]
+                if not subset:
+                    continue
+                rel = _mean([r["relevancy"] for r in subset])
+                faith = _mean([r["faithfulness"] for r in subset])
+                cp = _mean([r["context_precision"] for r in subset])
+                cr = _mean([r["context_recall"] for r in subset])
+                ms_vals = sorted(r["retrieve_ms"] for r in subset)
+                p50 = ms_vals[len(ms_vals) // 2] if ms_vals else 0
+                print(
+                    f"{short:<10} {top_k:>5} {lang:<5} {rel:>10.3f} {faith:>10.3f} {cp:>10.3f} "
+                    f"{cr if cr else '':>10} {p50:>7}"
+                )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -342,12 +466,27 @@ def _parse_args() -> argparse.Namespace:
         help="Output CSV path (default: docs/embedding-ab-report.csv)",
     )
     parser.add_argument(
-        "--n-results", type=int, default=3,
-        help="Number of chunks to retrieve per query (default: 3)",
+        "--top-k-values", default="10",
+        help="Comma-separated top_k values to sweep (default: 10). e.g.: 5,10,15,20,30",
     )
     parser.add_argument(
         "--skip-ingest", action="store_true",
         help="Skip ingest step; use existing collections (for re-running evaluation only)",
+    )
+    parser.add_argument(
+        "--search-modes", default=None,
+        help=(
+            "Comma-separated search modes for OpenSearch backend. "
+            "e.g.: dense,header+dense,hybrid,hybrid+header (default: hybrid+header)"
+        ),
+    )
+    parser.add_argument(
+        "--backend", default="opensearch", choices=["opensearch", "chroma"],
+        help="Vector backend to use (default: opensearch)",
+    )
+    parser.add_argument(
+        "--header-source", default="loader", choices=["loader", "llm", "none"],
+        help="PDF title extraction strategy (default: loader)",
     )
     return parser.parse_args()
 
@@ -361,13 +500,24 @@ if __name__ == "__main__":
         print(f"ERROR: Unknown model shorthand(s): {unknown}. Known: {list(MODEL_SHORTCUTS)}")
         sys.exit(1)
 
+    search_modes = (
+        [m.strip() for m in args.search_modes.split(",")]
+        if args.search_modes
+        else None
+    )
+
+    top_k_values = [int(k.strip()) for k in args.top_k_values.split(",")]
+
     asyncio.run(
         run_ab(
             datasource=args.datasource,
             model_shorts=shorts,
             queries_path=args.queries,
             output_path=args.output,
-            n_results=args.n_results,
+            top_k_values=top_k_values,
             skip_ingest=args.skip_ingest,
+            search_modes=search_modes,
+            backend=args.backend,
+            header_source=args.header_source,
         )
     )

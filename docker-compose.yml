@@ -40,6 +40,11 @@ services:
       - CHAT_API_KEY_EDGE=${CHAT_API_KEY_EDGE:-}
       - CHAT_API_KEY_LUTE=${CHAT_API_KEY_LUTE:-}
       - AUDIT_LOG_PATH=${AUDIT_LOG_PATH:-/data/audit/ingest.jsonl}
+      - OPENSEARCH_URL=http://opensearch:9200
+      - OS_INDEX_PREFIX=${OS_INDEX_PREFIX:-ls_}
+      - VECTOR_BACKEND=${VECTOR_BACKEND:-opensearch}
+      - HYBRID_PIPELINE_NAME=${HYBRID_PIPELINE_NAME:-hybrid-bm25-knn}
+      - SEARCH_MODE=${SEARCH_MODE:-hybrid+header}
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents
@@ -47,6 +52,8 @@ services:
       - ./data/audit:/data/audit
     depends_on:
       chromadb:
+        condition: service_started
+      opensearch:
         condition: service_started
     restart: unless-stopped
     networks:
@@ -73,6 +80,43 @@ services:
       - "127.0.0.1:${CHROMA_ADMIN_PORT:-3001}:3001"
     depends_on:
       chromadb:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    container_name: opensearch
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        /usr/share/opensearch/bin/opensearch-plugin install --batch analysis-kuromoji 2>/dev/null || true
+        /usr/share/opensearch/bin/opensearch-plugin install --batch analysis-icu 2>/dev/null || true
+        exec /usr/share/opensearch/opensearch-docker-entrypoint.sh opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - DISABLE_SECURITY_PLUGIN=true
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"
+    volumes:
+      - ./data/opensearch:/usr/share/opensearch/data
+    restart: unless-stopped
+    networks:
+      - langchain-net
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.18.0
+    container_name: opensearch-dashboards
+    ports:
+      - "127.0.0.1:${OSD_PORT:-5601}:5601"
+    environment:
+      - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      opensearch:
         condition: service_started
     restart: unless-stopped
     networks:

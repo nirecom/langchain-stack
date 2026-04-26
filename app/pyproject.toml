@@ -16,6 +16,8 @@ dependencies = [
     "langchain-community>=0.3",
     # Phase 4A: Ingestion
     "chromadb>=1.0",
+    # Phase 4F: OpenSearch
+    "opensearch-py>=2.4",
     "langchain-text-splitters>=0.3",
     "pymupdf>=1.25",
     "openpyxl>=3.1",
