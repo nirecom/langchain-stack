@@ -142,18 +142,20 @@ services:
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.3
     container_name: langfuse-clickhouse
+    user: "0"
     environment:
       - CLICKHOUSE_DB=default
       - CLICKHOUSE_USER=clickhouse
       - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
     volumes:
-      - ./data/langfuse-clickhouse/data:/var/lib/clickhouse
-      - ./data/langfuse-clickhouse/logs:/var/log/clickhouse-server
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+      - ./config/clickhouse:/etc/clickhouse-server/config.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping && bash -c '</dev/tcp/localhost/9000' 2>/dev/null || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
     restart: unless-stopped
     networks:
       - langchain-net
@@ -212,7 +214,7 @@ services:
       - DATABASE_URL=postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD}@langfuse-postgres:5432/langfuse
       - SALT=${LANGFUSE_SALT}
       - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
-      - CLICKHOUSE_MIGRATION_URL=clickhouse://langfuse-clickhouse:9000
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:${LANGFUSE_CLICKHOUSE_PASSWORD}@langfuse-clickhouse:9000
       - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
       - CLICKHOUSE_USER=clickhouse
       - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
@@ -249,7 +251,7 @@ services:
       - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
       - SALT=${LANGFUSE_SALT}
       - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
-      - CLICKHOUSE_MIGRATION_URL=clickhouse://langfuse-clickhouse:9000
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:${LANGFUSE_CLICKHOUSE_PASSWORD}@langfuse-clickhouse:9000
       - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
       - CLICKHOUSE_USER=clickhouse
       - CLICKHOUSE_PASSWORD=${LANGFUSE_CLICKHOUSE_PASSWORD}
@@ -280,3 +282,7 @@ services:
 networks:
   langchain-net:
     driver: bridge
+
+volumes:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
