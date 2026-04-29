@@ -97,7 +97,7 @@ Response Relevancy score: {score} (threshold: {threshold})"""),
 
 async def generate_feedback(
     question: str, answer: str, score: float, threshold: float,
-    *, criteria: str = "",
+    *, criteria: str = "", callback_handler=None,
 ) -> str:
     """
     Generate improvement feedback using Judge LLM (Phase 3C).
@@ -105,6 +105,7 @@ async def generate_feedback(
     """
     judge = get_judge()
     chain = FEEDBACK_PROMPT | judge | JsonOutputParser()
+    cfg = {"callbacks": [callback_handler]} if callback_handler else {}
 
     try:
         result = await chain.ainvoke({
@@ -113,7 +114,7 @@ async def generate_feedback(
             "score": f"{score:.4f}",
             "threshold": f"{threshold:.2f}",
             "criteria": criteria,
-        })
+        }, **cfg)
         feedback = result.get("feedback", "Please provide a more relevant answer.")
         logger.info("Judge feedback generated (%d chars)", len(feedback))
         return feedback

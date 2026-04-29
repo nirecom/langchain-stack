@@ -16,7 +16,6 @@ from fastapi import FastAPI, File, Form, Request, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from chains.llm_as_judge import run_judge_chain, run_judge_chain_stream
-from rag.retriever import get_relevant_context
 from rag.access_control import (
     UserRegistry, validate_access_control, load_access_control,
     set_registry, get_user_by_api_key, is_valid_datasource,
@@ -28,6 +27,7 @@ from rag.ingest import (
     list_files, delete_file, dry_run_file, SUPPORTED_EXTENSIONS,
 )
 from settings import settings
+from tracing import init_tracing, flush_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,12 @@ async def startup_event():
     registry = UserRegistry.build_from_config(config)
     validate_access_control(config, registry)
     set_registry(registry)
+    init_tracing()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    flush_tracing()
 
 
 class ChatMessage(BaseModel):
@@ -174,9 +180,6 @@ def _sse_role(run_id: str) -> str:
 async def _stream_response(request: ChatRequest, *, user: str):
     """Async generator that yields SSE events for streaming response."""
     user_message = request.messages[-1].content
-    context = ""
-    if request.use_rag:
-        context = await get_relevant_context(user_message, user=user)
 
     run_id = "stream"
     role_sent = False
@@ -184,7 +187,8 @@ async def _stream_response(request: ChatRequest, *, user: str):
     try:
         async for event in run_judge_chain_stream(
             prompt=user_message,
-            context=context,
+            user=user,
+            use_rag=request.use_rag,
             temperature=request.temperature,
         ):
             if not role_sent:
@@ -231,13 +235,10 @@ async def chat_completions(request: ChatRequest, raw_request: Request):
     # Non-streaming path
     user_message = request.messages[-1].content
 
-    context = ""
-    if request.use_rag:
-        context = await get_relevant_context(user_message, user=user)
-
     result = await run_judge_chain(
         prompt=user_message,
-        context=context,
+        user=user,
+        use_rag=request.use_rag,
         temperature=request.temperature,
     )
 

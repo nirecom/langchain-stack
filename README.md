@@ -5,7 +5,7 @@ LLM-as-a-Judge chain with RAG support, exposed as an OpenAI-compatible API.
 ## Features
 
 - **LLM-as-a-Judge**: Evaluates LLM responses with verdict, score, and feedback. Supports retry loops.
-- **RAG**: ChromaDB-backed retrieval with per-user datasource access control. Uses `BAAI/bge-m3` embedding (selected via A/B evaluation against ruri/qwen3/bgem3).
+- **RAG**: OpenSearch-backed hybrid search (BM25+kNN) with per-user datasource access control. Uses `BAAI/bge-m3` embedding (selected via A/B evaluation against ruri/qwen3/bgem3).
 - **User-based ACL**: Each user has an individual API key mapped to permitted datasources.
 - **Streaming**: SSE streaming (`stream: true`) supported.
 - **Audit logging**: Ingest and retrieval events logged to JSONL with user attribution.

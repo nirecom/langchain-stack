@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # Audit log
     audit_log_path: str = Field(default="/data/audit/ingest.jsonl")
 
+    # Langfuse tracing (Phase 5)
+    langfuse_public_key: str = Field(default="")
+    langfuse_secret_key: str = Field(default="")
+    langfuse_host: str = Field(default="")
+    langfuse_required: bool = Field(default=True)
+
     @property
     def models(self) -> dict:
         return _load_yaml(self.models_config_path)

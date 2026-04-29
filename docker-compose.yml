@@ -45,6 +45,10 @@ services:
       - VECTOR_BACKEND=${VECTOR_BACKEND:-opensearch}
       - HYBRID_PIPELINE_NAME=${HYBRID_PIPELINE_NAME:-hybrid-bm25-knn}
       - SEARCH_MODE=${SEARCH_MODE:-hybrid+header}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_REQUIRED=${LANGFUSE_REQUIRED:-true}
     volumes:
       - ./config:/config:ro
       - ./data/documents:/data/documents
