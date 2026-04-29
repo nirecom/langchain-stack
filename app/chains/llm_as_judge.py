@@ -151,8 +151,9 @@ async def run_judge_chain(
                 )
 
                 with trace_span("ragas_eval") as eval_span:
+                    ragas_cb = get_callback_handler()
                     evaluation = await compute_response_relevancy(
-                        question=prompt, answer=answer
+                        question=prompt, answer=answer, callback_handler=ragas_cb
                     )
                     eval_span.update(output=evaluation)
 
@@ -320,8 +321,9 @@ async def run_judge_chain_stream(
 
                 yield {"type": "status", "text": "⏳ Evaluating response relevancy...\n\n"}
                 with trace_span("ragas_eval") as eval_span:
+                    ragas_cb = get_callback_handler()
                     evaluation = await compute_response_relevancy(
-                        question=prompt, answer=answer
+                        question=prompt, answer=answer, callback_handler=ragas_cb
                     )
                     eval_span.update(output=evaluation)
 

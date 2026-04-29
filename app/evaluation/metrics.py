@@ -47,13 +47,20 @@ def _get_context_precision_metric():
     return ContextPrecision(llm=LangchainLLMWrapper(get_judge()))
 
 
-async def compute_response_relevancy(question: str, answer: str) -> dict:
+async def compute_response_relevancy(
+    question: str,
+    answer: str,
+    *,
+    callback_handler=None,
+) -> dict:
     """
     Compute RAGAS Response Relevancy score.
 
     Args:
         question: Original user question
         answer: Reasoner's response
+        callback_handler: Optional LangChain callback handler for tracing
+            (e.g. Langfuse CallbackHandler). Pass None to disable tracing.
 
     Returns:
         dict with keys:
@@ -69,7 +76,8 @@ async def compute_response_relevancy(question: str, answer: str) -> dict:
             user_input=question,
             response=answer,
         )
-        score = await metric.single_turn_ascore(sample)
+        callbacks = [callback_handler] if callback_handler is not None else []
+        score = await metric.single_turn_ascore(sample, callbacks=callbacks)
 
         verdict = "PASS" if score >= threshold else "FAIL"
 
