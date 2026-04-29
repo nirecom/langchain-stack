@@ -201,6 +201,9 @@ async def _stream_response(request: ChatRequest, *, user: str):
             elif event["type"] == "token":
                 yield _sse_chunk(run_id, event["text"])
 
+            elif event["type"] == "answer":
+                yield _sse_chunk(run_id, event["text"])
+
             elif event["type"] == "evaluation":
                 result = event["result"]
                 run_id = result["run_id"]

@@ -52,6 +52,9 @@ See `.env.example` for the full list. Key variables:
 | `EMBEDDING_MODEL_NAME` | Embedding model (default: `BAAI/bge-m3`) |
 | `INGEST_DEVICE` | Device for ingest embeddings: `cpu` (default) or `cuda` |
 | `RAG_TOP_K` | Number of chunks retrieved per query (default: `10`) |
+| `LANGFUSE_HOST` | Langfuse server URL (empty = tracing disabled) |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse project public key |
+| `LANGFUSE_SECRET_KEY` | Langfuse project secret key |
 
 ## Daily Operations
 

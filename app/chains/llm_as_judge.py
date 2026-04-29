@@ -338,7 +338,7 @@ async def run_judge_chain_stream(
                         "feedback": "-",
                     })
                     if not is_last_attempt:
-                        yield {"type": "token", "text": answer}
+                        yield {"type": "answer", "text": answer}
                     break
 
                 if not is_last_attempt:
