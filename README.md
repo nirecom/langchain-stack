@@ -55,6 +55,7 @@ See `.env.example` for the full list. Key variables:
 | `LANGFUSE_HOST` | Langfuse server URL (empty = tracing disabled) |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse project public key |
 | `LANGFUSE_SECRET_KEY` | Langfuse project secret key |
+| `LANGFUSE_S3_EVENT_UPLOAD_REGION` | MinIO region placeholder (e.g. `minio-local`; use actual region when migrating to AWS S3) |
 
 ## Daily Operations
 

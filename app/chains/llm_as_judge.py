@@ -309,7 +309,7 @@ async def run_judge_chain_stream(
                     answer = "".join(answer_chunks)
                 else:
                     answer_msg = await reasoner.ainvoke(
-                        _build_reasoner_messages(reasoner_input), **cfg
+                        _build_reasoner_messages(reasoner_input), config=cfg or None
                     )
                     answer = answer_msg.content
 

@@ -114,7 +114,7 @@ async def generate_feedback(
             "score": f"{score:.4f}",
             "threshold": f"{threshold:.2f}",
             "criteria": criteria,
-        }, **cfg)
+        }, config=cfg or None)
         feedback = result.get("feedback", "Please provide a more relevant answer.")
         logger.info("Judge feedback generated (%d chars)", len(feedback))
         return feedback
