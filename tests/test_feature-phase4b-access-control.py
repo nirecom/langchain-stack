@@ -17,6 +17,8 @@ import time
 import pytest
 import httpx
 
+pytestmark = pytest.mark.e2e
+
 # Per-user chat tokens — mirror the new user-based ACL design.
 os.environ.setdefault("CHAT_API_KEY_KYOKO", "test-kyoko-key")
 os.environ.setdefault("CHAT_API_KEY_NIRE", "test-nire-key")

@@ -716,14 +716,15 @@ class TestGenerateFeedbackCallback:
                 )
 
         assert ainvoke_calls, "chain.ainvoke must have been called"
-        config = ainvoke_calls[0].get("callbacks")
-        assert config is not None, \
-            f"callbacks kwarg not passed (got: {ainvoke_calls[0]})"
-        assert mock_handler in config, \
-            f"callback_handler not in callbacks: {config}"
+        config = ainvoke_calls[0].get("config") or {}
+        callbacks = config.get("callbacks") if isinstance(config, dict) else None
+        assert callbacks is not None, \
+            f"config.callbacks not passed (got: {ainvoke_calls[0]})"
+        assert mock_handler in callbacks, \
+            f"callback_handler not in config.callbacks: {callbacks}"
 
     async def test_generate_feedback_no_config_when_callback_handler_none(self):
-        """callback_handler=None → no callbacks in ainvoke call."""
+        """callback_handler=None → no callbacks in ainvoke config."""
         ainvoke_calls = []
 
         async def recording_ainvoke(input_data, **kwargs):
@@ -748,6 +749,7 @@ class TestGenerateFeedbackCallback:
                 )
 
         assert ainvoke_calls, "chain.ainvoke must have been called"
-        callbacks = ainvoke_calls[0].get("callbacks")
+        config = ainvoke_calls[0].get("config")
+        callbacks = config.get("callbacks") if isinstance(config, dict) else None
         assert callbacks is None, \
-            f"Expected no callbacks kwarg when handler=None, got: {callbacks}"
+            f"Expected no callbacks in config when handler=None, got: {config}"

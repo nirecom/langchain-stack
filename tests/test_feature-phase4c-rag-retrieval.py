@@ -498,6 +498,7 @@ class TestCriteriaSwitching:
             patch("chains.llm_as_judge.probe_endpoints", new_callable=AsyncMock),
             patch("chains.llm_as_judge.compute_response_relevancy", mock_relevancy),
             patch("chains.llm_as_judge.generate_feedback", mock_feedback),
+            patch("chains.llm_as_judge.get_relevant_context", new_callable=AsyncMock, return_value="some context"),
             patch("chains.llm_as_judge.app_settings") as mock_settings,
         ):
             mock_settings.max_judge_retries = 1
@@ -505,7 +506,7 @@ class TestCriteriaSwitching:
             mock_settings.rag_judge_criteria = "rag criteria"
 
             from chains.llm_as_judge import run_judge_chain
-            await run_judge_chain(prompt="Q", context="some context")
+            await run_judge_chain(prompt="Q", use_rag=True)
 
         mock_feedback.assert_called_once()
         call_kwargs = mock_feedback.call_args
@@ -531,7 +532,7 @@ class TestCriteriaSwitching:
             mock_settings.rag_judge_criteria = "rag criteria"
 
             from chains.llm_as_judge import run_judge_chain
-            await run_judge_chain(prompt="Q", context="")
+            await run_judge_chain(prompt="Q", use_rag=False)
 
         mock_feedback.assert_called_once()
         call_kwargs = mock_feedback.call_args

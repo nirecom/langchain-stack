@@ -223,10 +223,10 @@ class TestIdempotency:
         create_call_count = {"n": 0}
         original_exists = mock_client.indices.exists.return_value
 
-        def exists_side_effect(index_name):
+        def exists_side_effect(index=None, **kwargs):
             return create_call_count["n"] > 0
 
-        def create_side_effect(index, body):
+        def create_side_effect(index=None, body=None, **kwargs):
             create_call_count["n"] += 1
             return {"acknowledged": True}
 

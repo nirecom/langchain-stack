@@ -9,6 +9,8 @@ import time
 import pytest
 import httpx
 
+pytestmark = pytest.mark.e2e
+
 BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8100")
 INGEST_API_KEY = os.getenv("TEST_INGEST_API_KEY", "test-ingest-key")
 DATASOURCE = "test-ds-mgmt"

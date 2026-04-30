@@ -887,7 +887,13 @@ class TestFormatJudgeEvaluation:
         import sys
 
         # Mock heavy app dependencies so main.py can be imported
-        for mod in ("chains", "chains.llm_as_judge", "rag", "rag.retriever"):
+        for mod in (
+            "chains", "chains.llm_as_judge",
+            "rag", "rag.retriever", "rag.access_control", "rag.audit", "rag.ingest",
+            "evaluation", "evaluation.metrics",
+            "tracing",
+            "chromadb", "chromadb.errors",
+        ):
             if mod not in sys.modules:
                 sys.modules[mod] = MagicMock()
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "app"))
