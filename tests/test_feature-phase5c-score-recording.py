@@ -47,6 +47,9 @@ def _import_module():
         if mod not in sys.modules:
             sys.modules[mod] = MagicMock()
 
+    # probe_endpoints is called via asyncio.run() so it must be an AsyncMock
+    sys.modules["models.provider"].probe_endpoints = AsyncMock()
+
     # Mock evaluation.metrics separately so it doesn't try to load ragas
     if "evaluation.metrics" not in sys.modules:
         sys.modules["evaluation.metrics"] = MagicMock()
@@ -438,3 +441,112 @@ class TestEdgeCases:
         assert callable(kwargs["task"]), "task must be callable"
         assert len(kwargs["evaluators"]) == 1
         assert callable(kwargs["evaluators"][0]), "evaluators[0] must be callable"
+
+
+# ===========================================================================
+# H. Python version policy — regression guard tests
+# ===========================================================================
+
+_ROOT = Path(__file__).parent.parent
+_APP_PATH = str(_ROOT / "app")
+
+
+def _import_pyversion():
+    if _APP_PATH not in sys.path:
+        sys.path.insert(0, _APP_PATH)
+    import importlib
+    if "_pyversion" in sys.modules:
+        return sys.modules["_pyversion"]
+    return importlib.import_module("_pyversion")
+
+
+class TestPythonVersionPolicy:
+    """A. Configuration invariant tests — environment-independent."""
+
+    def test_pyproject_excludes_python_313_and_314(self):
+        """pyproject.toml requires-python must cap at <3.13 (verified-only policy)."""
+        import tomllib
+        p = (_ROOT / "app" / "pyproject.toml").read_text(encoding="utf-8")
+        requires = tomllib.loads(p)["project"]["requires-python"]
+        assert "<3.13" in requires, f"Expected <3.13 in requires-python, got {requires!r}"
+
+    def test_python_version_file_pins_312(self):
+        """.python-version must pin to 3.12 for uv-based invocations."""
+        pv = (_ROOT / ".python-version").read_text(encoding="utf-8").strip()
+        assert pv.startswith("3.12"), f"Expected '3.12*', got {pv!r}"
+
+    def test_no_python_314_workarounds_in_run_cp_eval(self):
+        """run_cp_eval.py must not contain the old Python 3.14 sniffio monkey-patch."""
+        src = (_ROOT / "app" / "evaluation" / "run_cp_eval.py").read_text(encoding="utf-8")
+        assert "sniffio.current_async_library = " not in src
+        assert "_patched_current_async_library" not in src
+
+    def test_run_cp_eval_imports_pyversion_guard(self):
+        """run_cp_eval.py must import _pyversion so the guard fires on import."""
+        src = (_ROOT / "app" / "evaluation" / "run_cp_eval.py").read_text(encoding="utf-8")
+        assert "import _pyversion" in src, "run_cp_eval.py must contain 'import _pyversion'"
+
+
+class TestPyversionGuard:
+    """B. Fail-fast guard unit tests — call check_python_version() with patched version_info."""
+
+    def test_pyversion_guard_rejects_314(self, monkeypatch):
+        """Guard raises RuntimeError on Python 3.14+."""
+        pv = _import_pyversion()
+        monkeypatch.setattr(sys, "version_info", (3, 14, 0, "final", 0))
+        with pytest.raises(RuntimeError, match="Unsupported Python"):
+            pv.check_python_version()
+
+    def test_pyversion_guard_rejects_313_unverified(self, monkeypatch):
+        """Guard raises RuntimeError on Python 3.13 (unverified — verified-only policy)."""
+        pv = _import_pyversion()
+        monkeypatch.setattr(sys, "version_info", (3, 13, 0, "final", 0))
+        with pytest.raises(RuntimeError, match="Unsupported Python"):
+            pv.check_python_version()
+
+    def test_pyversion_guard_passes_on_312(self, monkeypatch):
+        """Guard must not raise on Python 3.12 (the pinned version)."""
+        pv = _import_pyversion()
+        monkeypatch.setattr(sys, "version_info", (3, 12, 5, "final", 0))
+        pv.check_python_version()  # must not raise
+
+    def test_pyversion_guard_rejects_311(self, monkeypatch):
+        """Guard raises RuntimeError on Python 3.11 (below MIN_VERSION)."""
+        pv = _import_pyversion()
+        monkeypatch.setattr(sys, "version_info", (3, 11, 9, "final", 0))
+        with pytest.raises(RuntimeError, match="Unsupported Python"):
+            pv.check_python_version()
+
+
+class TestSupportedVersionConsistency:
+    """C. Cross-repo consistency — 5 locations must encode the same Python policy."""
+
+    def test_supported_version_consistency_across_repo(self):
+        """All 5 supported-version sources must agree: .python-version, pyproject,
+        _pyversion constants, README, and uv.lock."""
+        import tomllib
+
+        # 1. .python-version
+        pv = (_ROOT / ".python-version").read_text(encoding="utf-8").strip()
+        assert pv.startswith("3.12"), f".python-version: expected 3.12*, got {pv!r}"
+
+        # 2. pyproject.toml
+        pp = tomllib.loads((_ROOT / "app" / "pyproject.toml").read_text(encoding="utf-8"))
+        requires = pp["project"]["requires-python"]
+        assert ">=3.12" in requires and "<3.13" in requires, \
+            f"pyproject.toml: unexpected requires-python {requires!r}"
+
+        # 3. _pyversion.py guard constants
+        mod = _import_pyversion()
+        assert mod.MIN_VERSION == (3, 12), f"_pyversion.MIN_VERSION: expected (3,12), got {mod.MIN_VERSION}"
+        assert mod.MAX_EXCLUSIVE == (3, 13), f"_pyversion.MAX_EXCLUSIVE: expected (3,13), got {mod.MAX_EXCLUSIVE}"
+
+        # 4. README mentions Python 3.12
+        readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+        assert "Python 3.12" in readme, "README.md must mention 'Python 3.12' in Development Setup"
+
+        # 5. uv.lock requires-python field — uv may normalise >=3.12,<3.13 to ==3.12.*
+        lock = tomllib.loads((_ROOT / "app" / "uv.lock").read_text(encoding="utf-8"))
+        lock_requires = lock.get("requires-python", "")
+        assert "3.12" in lock_requires, \
+            f"uv.lock requires-python out of sync with pyproject: {lock_requires!r}"

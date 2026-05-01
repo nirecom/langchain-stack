@@ -65,6 +65,24 @@ docker compose logs -f langchain-api
 docker compose up -d langchain-api   # Restart after config/code change
 ```
 
+## Development Setup
+
+```bash
+# Python 3.12 is required (pinned via .python-version)
+# Python 3.13 is unverified; Python 3.14 has a known anyio/asyncio cleanup
+# regression that masks errors from OpenAI requests — use Python 3.12 only.
+uv sync --extra test
+uv run python -c "import sys; print(sys.version)"  # should print 3.12.x
+```
+
+Run the ContextPrecision batch evaluation script:
+
+```bash
+uv run --directory app python evaluation/run_cp_eval.py \
+    --dataset rag-cp-eval --run-name bgem3-top10-YYYY-MM-DD \
+    --queries ../tests/data/cp-queries.yaml --user nire
+```
+
 ## ⚠ Caution
 
 - `.env` contains secrets — excluded from Git via `.gitignore`. Copy from `.env.example` and fill in values.

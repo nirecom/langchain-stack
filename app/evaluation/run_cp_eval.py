@@ -2,20 +2,25 @@
 Batch ContextPrecision evaluation script using Langfuse Datasets.
 
 Usage:
-    python app/evaluation/run_cp_eval.py \
+    uv run --directory app python evaluation/run_cp_eval.py \
         --dataset rag-cp-eval \
         --run-name bgem3-top10-2026-04-29 \
-        --queries tests/data/cp-queries.yaml \
+        --queries ../tests/data/cp-queries.yaml \
         --user nire
+
+Requires Python 3.12 (pinned via .python-version). Python 3.13 is unverified;
+3.14 has a known anyio/asyncio cleanup regression that masks OpenAI errors.
 """
 import argparse
+import asyncio
 import hashlib
 import logging
 import os
 import sys
 import yaml
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import _pyversion  # noqa: F401  -- triggers Python version guard on import
 
 from evaluation.metrics import compute_context_precision
 from rag.retriever import get_relevant_context
@@ -83,6 +88,9 @@ async def _evaluate_item(query: str, context: str, answer: str, reference: str) 
 
 
 def run_eval(args) -> None:
+    from models.provider import probe_endpoints
+    asyncio.run(probe_endpoints())
+
     langfuse = _get_langfuse()
     try:
         queries = _load_queries(args.queries)
