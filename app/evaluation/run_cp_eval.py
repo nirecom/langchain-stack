@@ -2,14 +2,13 @@
 Batch ContextPrecision evaluation script using Langfuse Datasets.
 
 Usage:
-    uv run python app/evaluation/run_cp_eval.py \
+    python app/evaluation/run_cp_eval.py \
         --dataset rag-cp-eval \
         --run-name bgem3-top10-2026-04-29 \
         --queries tests/data/cp-queries.yaml \
         --user nire
 """
 import argparse
-import asyncio
 import hashlib
 import logging
 import os
@@ -70,33 +69,52 @@ async def _generate_answer(question: str, context: str) -> str:
     return msg.content
 
 
-async def _evaluate_item(item, *, span, user: str) -> None:
-    """Retrieve context, generate answer, score CP, and record via span."""
-    query = item.input
-    reference = item.expected_output or ""
+async def _evaluate_item(query: str, context: str, answer: str, reference: str) -> list:
+    """Compute CP score; returns [Evaluation(...)] or [] when no score available."""
+    from langfuse.experiment import Evaluation
 
-    context = await get_relevant_context(query, user=user)
-    answer = await _generate_answer(query, context)
     result = await compute_context_precision(query, context, answer, reference=reference)
-
     score = result.get("score")
     if score is None:
-        logger.info("Skipping item (no reference or SKIP result): %s", item.id)
-        return
+        logger.info("Skipping item (no reference or SKIP result): %s", query[:40])
+        return []
+    logger.info("Scored query '%s...': context_precision=%.4f", query[:40], score)
+    return [Evaluation(name="context_precision", value=score)]
 
-    span.score(name="context_precision", value=score)
-    logger.info("Scored item %s: context_precision=%.4f", item.id, score)
 
-
-async def run_eval(args) -> None:
+def run_eval(args) -> None:
     langfuse = _get_langfuse()
     try:
         queries = _load_queries(args.queries)
         langfuse.create_dataset(name=args.dataset)
         for q in queries:
-            item = _upsert_dataset_item(langfuse, args.dataset, q)
-            with item.run(run_name=args.run_name) as span:
-                await _evaluate_item(item, span=span, user=args.user)
+            _upsert_dataset_item(langfuse, args.dataset, q)
+
+        dataset_items = langfuse.get_dataset(args.dataset).items
+
+        async def task(*, item, **kwargs):
+            query = item.input
+            context = await get_relevant_context(query, user=args.user)
+            answer = await _generate_answer(query, context)
+            return {"answer": answer, "context": context}
+
+        async def evaluator(*, input, output, expected_output, metadata, **kwargs):
+            if not output:
+                return []
+            return await _evaluate_item(
+                input,
+                output.get("context", ""),
+                output.get("answer", ""),
+                expected_output or "",
+            )
+
+        langfuse.run_experiment(
+            name=args.dataset,
+            run_name=args.run_name,
+            data=dataset_items,
+            task=task,
+            evaluators=[evaluator],
+        )
     finally:
         langfuse.flush()
 
@@ -113,7 +131,7 @@ def _parse_args():
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args = _parse_args()
-    asyncio.run(run_eval(args))
+    run_eval(args)
 
 
 if __name__ == "__main__":

@@ -9,15 +9,15 @@ Test groups:
   B. _load_queries — YAML loading
   C. _upsert_dataset_item — Langfuse dataset item creation
   D. _generate_answer — LLM answer generation
-  E. _evaluate_item — context retrieval + CP scoring + span recording
-  F. run_eval — full evaluation loop integration
-  G. Edge cases — empty queries, no reference, SKIP result
+  E. _evaluate_item — CP scoring + Evaluation object construction
+  F. run_eval — full evaluation loop integration (sync, run_experiment)
+  G. Edge cases — empty queries, score=0.0, task/evaluator callables
 """
 import hashlib
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -38,7 +38,7 @@ def _import_module():
     # Mock external dependencies (not the evaluation package itself —
     # mocking a parent package as MagicMock breaks submodule imports)
     for mod in (
-        "langfuse",
+        "langfuse", "langfuse.experiment",
         "rag", "rag.retriever",
         "models", "models.provider",
         "langchain_core", "langchain_core.messages",
@@ -248,174 +248,57 @@ class TestGenerateAnswer:
 
 
 # ===========================================================================
-# E. _evaluate_item — context retrieval + CP scoring + span recording
+# E. _evaluate_item — CP scoring + Evaluation object construction
 # ===========================================================================
 
 class TestEvaluateItem:
     def setup_method(self):
         self.mod = _import_module()
+        # Reset Evaluation mock call count between tests
+        if "langfuse.experiment" in sys.modules:
+            sys.modules["langfuse.experiment"].Evaluation.reset_mock()
 
     @pytest.mark.asyncio
-    async def test_calls_span_score_on_success(self):
-        """When CP returns a score, span.score is called with context_precision."""
-        mock_span = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "What is X?"
-        mock_item.expected_output = "X is Y."
-        mock_item.id = "abc123"
-
-        with (
-            patch("evaluation.run_cp_eval.get_relevant_context",
-                  new_callable=AsyncMock, return_value="Context about X."),
-            patch("evaluation.run_cp_eval._generate_answer",
-                  new_callable=AsyncMock, return_value="X is Y because..."),
-            patch("evaluation.run_cp_eval.compute_context_precision",
-                  new_callable=AsyncMock, return_value={"score": 0.85}),
-        ):
-            await self.mod._evaluate_item(mock_item, span=mock_span, user="nire")
-
-        mock_span.score.assert_called_once_with(name="context_precision", value=0.85)
+    async def test_returns_empty_list_when_no_score(self):
+        """Returns [] when CP produces no score (no reference)."""
+        with patch("evaluation.run_cp_eval.compute_context_precision",
+                   new_callable=AsyncMock, return_value={"score": None}):
+            result = await self.mod._evaluate_item("q", "ctx", "ans", "")
+        assert result == []
 
     @pytest.mark.asyncio
-    async def test_skips_span_score_when_no_score(self):
-        """When CP returns None score (no reference), span.score is NOT called."""
-        mock_span = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "What is X?"
-        mock_item.expected_output = ""
-        mock_item.id = "abc123"
-
-        with (
-            patch("evaluation.run_cp_eval.get_relevant_context",
-                  new_callable=AsyncMock, return_value="some context"),
-            patch("evaluation.run_cp_eval._generate_answer",
-                  new_callable=AsyncMock, return_value="some answer"),
-            patch("evaluation.run_cp_eval.compute_context_precision",
-                  new_callable=AsyncMock, return_value={"score": None}),
-        ):
-            await self.mod._evaluate_item(mock_item, span=mock_span, user="nire")
-
-        mock_span.score.assert_not_called()
+    async def test_returns_single_evaluation_when_score_exists(self):
+        """Returns a list with one Evaluation when CP produces a score."""
+        with patch("evaluation.run_cp_eval.compute_context_precision",
+                   new_callable=AsyncMock, return_value={"score": 0.85}):
+            result = await self.mod._evaluate_item("q", "ctx", "ans", "ref")
+        assert len(result) == 1
+        Evaluation_mock = sys.modules["langfuse.experiment"].Evaluation
+        Evaluation_mock.assert_called_with(name="context_precision", value=0.85)
 
     @pytest.mark.asyncio
-    async def test_passes_user_to_get_relevant_context(self):
-        """user arg is forwarded to get_relevant_context."""
-        mock_span = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "question"
-        mock_item.expected_output = "ref"
-        mock_item.id = "xyz"
-        mock_get_context = AsyncMock(return_value="ctx")
-
-        with (
-            patch("evaluation.run_cp_eval.get_relevant_context", mock_get_context),
-            patch("evaluation.run_cp_eval._generate_answer",
-                  new_callable=AsyncMock, return_value="ans"),
-            patch("evaluation.run_cp_eval.compute_context_precision",
-                  new_callable=AsyncMock, return_value={"score": 0.5}),
-        ):
-            await self.mod._evaluate_item(mock_item, span=mock_span, user="kyoko")
-
-        mock_get_context.assert_called_once_with("question", user="kyoko")
-
-    @pytest.mark.asyncio
-    async def test_score_value_passed_correctly(self):
-        """CP score value is passed verbatim to span.score."""
-        mock_span = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "q"
-        mock_item.expected_output = "ref"
-        mock_item.id = "id1"
-
+    async def test_score_value_in_evaluation(self):
+        """Various score values are passed verbatim to Evaluation."""
         for score_val in [0.0, 0.5, 1.0]:
-            mock_span.reset_mock()
-            with (
-                patch("evaluation.run_cp_eval.get_relevant_context",
-                      new_callable=AsyncMock, return_value="ctx"),
-                patch("evaluation.run_cp_eval._generate_answer",
-                      new_callable=AsyncMock, return_value="ans"),
-                patch("evaluation.run_cp_eval.compute_context_precision",
-                      new_callable=AsyncMock, return_value={"score": score_val}),
-            ):
-                await self.mod._evaluate_item(mock_item, span=mock_span, user="nire")
-
-            mock_span.score.assert_called_once_with(name="context_precision", value=score_val)
+            sys.modules["langfuse.experiment"].Evaluation.reset_mock()
+            with patch("evaluation.run_cp_eval.compute_context_precision",
+                       new_callable=AsyncMock, return_value={"score": score_val}):
+                result = await self.mod._evaluate_item("q", "ctx", "ans", "ref")
+            assert len(result) == 1
+            sys.modules["langfuse.experiment"].Evaluation.assert_called_with(
+                name="context_precision", value=score_val
+            )
 
 
 # ===========================================================================
-# F. run_eval — full evaluation loop integration
+# F. run_eval — full evaluation loop integration (sync, run_experiment)
 # ===========================================================================
 
 class TestRunEval:
     def setup_method(self):
         self.mod = _import_module()
 
-    @pytest.mark.asyncio
-    async def test_run_eval_calls_evaluate_per_item(self, tmp_path):
-        """run_eval calls _evaluate_item once per query in the file."""
-        yaml_file = tmp_path / "q.yaml"
-        yaml_file.write_text(textwrap.dedent("""\
-            queries:
-              - query: "Q1"
-                reference: "R1"
-              - query: "Q2"
-                reference: "R2"
-        """), encoding="utf-8")
-
-        args = MagicMock()
-        args.queries = str(yaml_file)
-        args.dataset = "test-ds"
-        args.run_name = "run-001"
-        args.user = "nire"
-
-        mock_langfuse = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "Q1"
-        mock_item.expected_output = "R1"
-        mock_item.id = "id1"
-        mock_langfuse.create_dataset_item.return_value = mock_item
-
-        mock_span = MagicMock()
-        mock_item.run.return_value.__enter__ = MagicMock(return_value=mock_span)
-        mock_item.run.return_value.__exit__ = MagicMock(return_value=False)
-
-        evaluate_calls = []
-
-        async def fake_evaluate(item, *, span, user):
-            evaluate_calls.append((item, user))
-
-        with (
-            patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse),
-            patch("evaluation.run_cp_eval._evaluate_item", fake_evaluate),
-        ):
-            await self.mod.run_eval(args)
-
-        assert len(evaluate_calls) == 2
-
-    @pytest.mark.asyncio
-    async def test_run_eval_flushes_langfuse(self, tmp_path):
-        """run_eval always calls langfuse.flush() even with no items."""
-        yaml_file = tmp_path / "q.yaml"
-        yaml_file.write_text("queries: []\n", encoding="utf-8")
-
-        args = MagicMock()
-        args.queries = str(yaml_file)
-        args.dataset = "test-ds"
-        args.run_name = "run-001"
-        args.user = "nire"
-
-        mock_langfuse = MagicMock()
-
-        with (
-            patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse),
-            patch("evaluation.run_cp_eval._evaluate_item", new_callable=AsyncMock),
-        ):
-            await self.mod.run_eval(args)
-
-        mock_langfuse.flush.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_run_eval_creates_dataset(self, tmp_path):
+    def test_run_eval_creates_dataset(self, tmp_path):
         """run_eval creates the Langfuse dataset before processing items."""
         yaml_file = tmp_path / "q.yaml"
         yaml_file.write_text("queries: []\n", encoding="utf-8")
@@ -427,14 +310,83 @@ class TestRunEval:
         args.user = "nire"
 
         mock_langfuse = MagicMock()
+        mock_langfuse.get_dataset.return_value = MagicMock(items=[])
 
-        with (
-            patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse),
-            patch("evaluation.run_cp_eval._evaluate_item", new_callable=AsyncMock),
-        ):
-            await self.mod.run_eval(args)
+        with patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse):
+            self.mod.run_eval(args)
 
         mock_langfuse.create_dataset.assert_called_once_with(name="my-eval-dataset")
+
+    def test_run_eval_calls_run_experiment_with_correct_args(self, tmp_path):
+        """run_eval calls run_experiment with name, run_name, data, task, evaluators."""
+        yaml_file = tmp_path / "q.yaml"
+        yaml_file.write_text(textwrap.dedent("""\
+            queries:
+              - query: "Q1"
+                reference: "R1"
+        """), encoding="utf-8")
+
+        args = MagicMock()
+        args.queries = str(yaml_file)
+        args.dataset = "test-ds"
+        args.run_name = "run-001"
+        args.user = "nire"
+
+        mock_langfuse = MagicMock()
+        sentinel_items = [MagicMock()]
+        mock_langfuse.get_dataset.return_value = MagicMock(items=sentinel_items)
+
+        with patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse):
+            self.mod.run_eval(args)
+
+        mock_langfuse.run_experiment.assert_called_once()
+        kwargs = mock_langfuse.run_experiment.call_args.kwargs
+        assert kwargs["name"] == "test-ds"
+        assert kwargs["run_name"] == "run-001"
+        assert kwargs["data"] is sentinel_items
+
+    def test_run_eval_flushes_langfuse(self, tmp_path):
+        """run_eval always calls langfuse.flush() even with no items."""
+        yaml_file = tmp_path / "q.yaml"
+        yaml_file.write_text("queries: []\n", encoding="utf-8")
+
+        args = MagicMock()
+        args.queries = str(yaml_file)
+        args.dataset = "test-ds"
+        args.run_name = "run-001"
+        args.user = "nire"
+
+        mock_langfuse = MagicMock()
+        mock_langfuse.get_dataset.return_value = MagicMock(items=[])
+
+        with patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse):
+            self.mod.run_eval(args)
+
+        mock_langfuse.flush.assert_called_once()
+
+    def test_run_eval_flushes_on_exception(self, tmp_path):
+        """langfuse.flush() is called even if an error occurs during item upsert."""
+        yaml_file = tmp_path / "q.yaml"
+        yaml_file.write_text(textwrap.dedent("""\
+            queries:
+              - query: "q"
+                reference: "r"
+        """), encoding="utf-8")
+
+        args = MagicMock()
+        args.queries = str(yaml_file)
+        args.dataset = "ds"
+        args.run_name = "run"
+        args.user = "nire"
+
+        mock_langfuse = MagicMock()
+        mock_langfuse.create_dataset_item.side_effect = RuntimeError("Langfuse down")
+
+        with patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse):
+            with pytest.raises(RuntimeError):
+                self.mod.run_eval(args)
+
+        mock_langfuse.flush.assert_called_once()
 
 
 # ===========================================================================
@@ -453,35 +405,22 @@ class TestEdgeCases:
         assert len(item_id) == 16
 
     @pytest.mark.asyncio
-    async def test_evaluate_item_score_zero_still_records(self):
-        """Score=0.0 is a valid score and must be recorded, not skipped."""
-        mock_span = MagicMock()
-        mock_item = MagicMock()
-        mock_item.input = "q"
-        mock_item.expected_output = "ref"
-        mock_item.id = "id1"
+    async def test_evaluate_item_score_zero_not_skipped(self):
+        """Score=0.0 is a valid score and must be included, not treated as falsy."""
+        if "langfuse.experiment" in sys.modules:
+            sys.modules["langfuse.experiment"].Evaluation.reset_mock()
+        with patch("evaluation.run_cp_eval.compute_context_precision",
+                   new_callable=AsyncMock, return_value={"score": 0.0}):
+            result = await self.mod._evaluate_item("q", "ctx", "ans", "ref")
+        assert len(result) == 1
+        sys.modules["langfuse.experiment"].Evaluation.assert_called_with(
+            name="context_precision", value=0.0
+        )
 
-        with (
-            patch("evaluation.run_cp_eval.get_relevant_context",
-                  new_callable=AsyncMock, return_value="ctx"),
-            patch("evaluation.run_cp_eval._generate_answer",
-                  new_callable=AsyncMock, return_value="ans"),
-            patch("evaluation.run_cp_eval.compute_context_precision",
-                  new_callable=AsyncMock, return_value={"score": 0.0}),
-        ):
-            await self.mod._evaluate_item(mock_item, span=mock_span, user="nire")
-
-        mock_span.score.assert_called_once_with(name="context_precision", value=0.0)
-
-    @pytest.mark.asyncio
-    async def test_run_eval_flushes_on_exception(self, tmp_path):
-        """langfuse.flush() is called even if evaluation raises an exception."""
+    def test_run_eval_task_and_evaluators_are_callable(self, tmp_path):
+        """run_eval passes callable task and non-empty evaluators list to run_experiment."""
         yaml_file = tmp_path / "q.yaml"
-        yaml_file.write_text(textwrap.dedent("""\
-            queries:
-              - query: "q"
-                reference: "r"
-        """), encoding="utf-8")
+        yaml_file.write_text("queries: []\n", encoding="utf-8")
 
         args = MagicMock()
         args.queries = str(yaml_file)
@@ -490,12 +429,12 @@ class TestEdgeCases:
         args.user = "nire"
 
         mock_langfuse = MagicMock()
-        mock_langfuse.create_dataset_item.side_effect = RuntimeError("Langfuse down")
+        mock_langfuse.get_dataset.return_value = MagicMock(items=[])
 
-        with (
-            patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse),
-        ):
-            with pytest.raises(RuntimeError):
-                await self.mod.run_eval(args)
+        with patch("evaluation.run_cp_eval._get_langfuse", return_value=mock_langfuse):
+            self.mod.run_eval(args)
 
-        mock_langfuse.flush.assert_called_once()
+        kwargs = mock_langfuse.run_experiment.call_args.kwargs
+        assert callable(kwargs["task"]), "task must be callable"
+        assert len(kwargs["evaluators"]) == 1
+        assert callable(kwargs["evaluators"][0]), "evaluators[0] must be callable"
