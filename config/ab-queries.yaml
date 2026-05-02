@@ -43,15 +43,15 @@ queries:
   - query: "What kind of topic did I read?"
     language: en
     datasource: nire-docs
-    expected_answer: "daily topic of news"
+    expected_answer: "news article about endangered emperor penguins"
 
   # Japanese queries
   - query: "発声のコツはなんですか"
     language: ja
     datasource: nire-docs
-    expected_answer: "鼻腔共鳴"    
+    expected_answer: "鼻腔共鳴"
 
   - query: "今日読んだ内容は?"
     language: ja
     datasource: nire-docs
-    expected_answer: "ニュースの時事ネタ"
+    expected_answer: "絶滅危惧種のコウテイペンギンに関するニュース記事"
