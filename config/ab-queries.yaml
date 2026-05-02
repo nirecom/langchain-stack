@@ -12,26 +12,26 @@
 queries:
   # --- parents-docs queries ---
   # English queries (cross-lingual: EN query → JA documents)
-  - query: "Where do they clean up in their house?"
+  - query: "Where do they organize in their house?"
     language: en
     datasource: parents-docs
-    expected_answer: "kitchen, living room"
+    expected_answer: "living room, kitchen, bathroom"
 
   - query: "What is their issue to resolve?"
     language: en
     datasource: parents-docs
-    expected_answer: "lack of space, not so smooth flow line"
+    expected_answer: "improving the flow line and making items easier to access"
 
   # Japanese queries (same-lingual: JA query → JA documents)
   - query: "整理収納の対象になる場所はどこが多い?"
     language: ja
     datasource: parents-docs
-    expected_answer: "キッチン、リビング"
+    expected_answer: "リビング、キッチン、洗面所"
 
   - query: "整理収納で解決したい課題は何ですか？"
     language: ja
     datasource: parents-docs
-    expected_answer: "スペース不足, 動線がスムーズでない"
+    expected_answer: "動線の改善と取り出しやすさの向上"
 
   # --- nire-docs queries ---
   # English queries
