@@ -4,10 +4,14 @@
 # expected_answer is optional: if provided, Context Recall is also computed.
 #
 # Usage:
-#   uv run python app/evaluation/run_ab.py \
+#   uv run --directory app python evaluation/run_ab.py \
 #     --datasource parents-docs \
 #     --models ruri,qwen3,bgem3 \
-#     --queries tests/data/ab-queries.yaml
+#     --queries ../config/ab-queries.yaml
+#
+#   uv run --directory app python evaluation/run_cp_eval.py \
+#     --dataset rag-cp-eval --run-name bgem3-top10-YYYY-MM-DD \
+#     --queries ../config/ab-queries.yaml --user nire
 
 queries:
   # --- parents-docs queries ---
