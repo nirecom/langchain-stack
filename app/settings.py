@@ -11,7 +11,7 @@ from pathlib import Path
 
 def _load_yaml(path: str) -> dict:
     p = Path(path)
-    return yaml.safe_load(p.read_text()) if p.exists() else {}
+    return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 class Settings(BaseSettings):
@@ -105,7 +105,10 @@ class Settings(BaseSettings):
         return "\n".join(f"- {c}" for c in criteria)
 
     class Config:
-        env_file = ".env"
+        # Look in CWD first (.env), then fall back to the repo root relative to
+        # this file (app/../.env) so scripts run via `uv run --directory app`
+        # also pick up the project-level dotenv.
+        env_file = (".env", str(Path(__file__).parent.parent / ".env"))
         extra = "ignore"
 
 

@@ -5,7 +5,7 @@ Usage:
     uv run --directory app python evaluation/run_cp_eval.py \
         --dataset rag-cp-eval \
         --run-name bgem3-top10-2026-04-29 \
-        --queries ../tests/data/cp-queries.yaml \
+        --queries ../config/ab-queries.yaml \
         --user nire
 
 Requires Python 3.12 (pinned via .python-version). Python 3.13 is unverified;
@@ -51,12 +51,14 @@ def _item_id(query: str, reference: str) -> str:
 
 def _upsert_dataset_item(langfuse, dataset_name: str, item_data: dict):
     query = item_data["query"]
-    reference = item_data.get("reference", "")
+    reference = item_data.get("reference") or item_data.get("expected_answer", "")
+    datasource = item_data.get("datasource", "")
     return langfuse.create_dataset_item(
         dataset_name=dataset_name,
         id=_item_id(query, reference),
         input=query,
         expected_output=reference,
+        metadata={"datasource": datasource} if datasource else None,
     )
 
 
@@ -91,6 +93,17 @@ def run_eval(args) -> None:
     from models.provider import probe_endpoints
     asyncio.run(probe_endpoints())
 
+    from rag.access_control import UserRegistry, set_registry, load_access_control
+    config = load_access_control()
+    # Eval script has no HTTP auth — build datasource mapping directly without
+    # requiring API key env vars (which build_from_config skips users for).
+    users_cfg = config.get("users", {})
+    user_to_ds = {
+        uname: list(dict.fromkeys(ucfg.get("datasources", [])))
+        for uname, ucfg in users_cfg.items()
+    }
+    set_registry(UserRegistry({}, user_to_ds))
+
     langfuse = _get_langfuse()
     try:
         queries = _load_queries(args.queries)
@@ -102,7 +115,13 @@ def run_eval(args) -> None:
 
         async def task(*, item, **kwargs):
             query = item.input
-            context = await get_relevant_context(query, user=args.user)
+            metadata = item.metadata or {}
+            ds = metadata.get("datasource")
+            context = await get_relevant_context(
+                query,
+                user=args.user,
+                datasources=[ds] if ds else None,
+            )
             answer = await _generate_answer(query, context)
             return {"answer": answer, "context": context}
 
@@ -122,6 +141,7 @@ def run_eval(args) -> None:
             data=dataset_items,
             task=task,
             evaluators=[evaluator],
+            max_concurrency=1,
         )
     finally:
         langfuse.flush()

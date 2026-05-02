@@ -132,9 +132,14 @@ async def get_relevant_context(
     user: str,
     n_results: int | None = None,
     search_mode: str | None = None,
+    datasources: list[str] | None = None,
 ) -> str:
     """
     Retrieve RAG context for *query*, restricted to ACL-permitted indices for *user*.
+
+    Args:
+        datasources: Optional list to narrow search to specific datasources.
+            Intersected with user's ACL — cannot grant access beyond what user is permitted.
     Returns "" on failure or when no results are found.
     """
     if not query.strip():
@@ -151,6 +156,8 @@ async def get_relevant_context(
         builder = _QUERY_BUILDERS.get(mode, _build_hybrid_header)
 
     permitted = get_permitted_datasources_for_user(user)
+    if datasources is not None:
+        permitted = permitted & set(datasources)
     if not permitted:
         logger.warning("RAG: no datasources permitted for user '%s'", user)
         log_retrieve_event(

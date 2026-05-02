@@ -39,7 +39,7 @@ def _import_module():
     # mocking a parent package as MagicMock breaks submodule imports)
     for mod in (
         "langfuse", "langfuse.experiment",
-        "rag", "rag.retriever",
+        "rag", "rag.retriever", "rag.access_control",
         "models", "models.provider",
         "langchain_core", "langchain_core.messages",
         "settings",
