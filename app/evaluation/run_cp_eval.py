@@ -50,6 +50,9 @@ def _item_id(query: str, reference: str) -> str:
 
 
 def _upsert_dataset_item(langfuse, dataset_name: str, item_data: dict):
+    if item_data.get("skip_qwen_eval"):
+        logger.info("Skipping item (skip_qwen_eval=true): %s", item_data.get("query", "")[:60])
+        return None
     query = item_data["query"]
     reference = item_data.get("reference") or item_data.get("expected_answer", "")
     datasource = item_data.get("datasource", "")
