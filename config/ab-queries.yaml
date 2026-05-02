@@ -21,10 +21,10 @@ queries:
     datasource: parents-docs
     expected_answer: "living room, kitchen, bathroom"
 
-  - query: "What is their issue to resolve?"
+  - query: "What organizing and storage issues are they trying to solve?"
     language: en
     datasource: parents-docs
-    expected_answer: "improving the flow line and making items easier to access"
+    expected_answer: "better movement flow and easier item access"
 
   # Japanese queries (same-lingual: JA query → JA documents)
   - query: "整理収納の対象になる場所はどこが多い?"
