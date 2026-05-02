@@ -155,7 +155,7 @@ async def get_relevant_context(
     else:
         builder = _QUERY_BUILDERS.get(mode, _build_hybrid_header)
 
-    permitted = get_permitted_datasources_for_user(user)
+    permitted = set(get_permitted_datasources_for_user(user))
     if datasources is not None:
         permitted = permitted & set(datasources)
     if not permitted:
