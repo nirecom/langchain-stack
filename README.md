@@ -80,8 +80,12 @@ Run the ContextPrecision batch evaluation script:
 ```bash
 uv run --directory app python evaluation/run_cp_eval.py \
     --dataset rag-cp-eval --run-name bgem3-top10-YYYY-MM-DD \
-    --queries ../tests/data/cp-queries.yaml --user nire
+    --queries ../config/ab-queries.yaml --user nire
 ```
+
+Queries are defined in `config/ab-queries.yaml`. Items with `skip_qwen_eval: true` (cross-lingual EN→JA queries) are excluded from Langfuse dataset upsert but remain in the file for A/B embedding eval.
+
+PDFs where text extraction fails (garbled font encoding) should be moved to `data/documents/<datasource>/_skipped/` — the ingest pipeline skips any path component starting with `_`.
 
 ## ⚠ Caution
 

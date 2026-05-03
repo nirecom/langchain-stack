@@ -30,10 +30,15 @@ queries:
     skip_qwen_eval: true
 
   # Japanese queries (same-lingual: JA query → JA documents)
-  - query: "整理収納の対象になる場所はどこが多い?"
+  - query: "洗濯物の動線を改善するために提案された収納場所はどこですか？"
     language: ja
     datasource: parents-docs
-    expected_answer: "リビング、キッチン、洗面所"
+    expected_answer: "和室"
+
+  - query: "「たたまない収納」研究でクライアントに提案した収納方法は何ですか？"
+    language: ja
+    datasource: parents-docs
+    expected_answer: "かける収納"
 
   - query: "整理収納で解決したい課題は何ですか？"
     language: ja

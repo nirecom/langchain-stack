@@ -111,10 +111,16 @@ def run_eval(args) -> None:
     try:
         queries = _load_queries(args.queries)
         langfuse.create_dataset(name=args.dataset)
+        current_ids: set[str] = set()
         for q in queries:
-            _upsert_dataset_item(langfuse, args.dataset, q)
+            item = _upsert_dataset_item(langfuse, args.dataset, q)
+            if item is not None:
+                ref = q.get("reference") or q.get("expected_answer", "")
+                current_ids.add(_item_id(q["query"], ref))
 
-        dataset_items = langfuse.get_dataset(args.dataset).items
+        all_items = langfuse.get_dataset(args.dataset).items
+        dataset_items = [item for item in all_items if item.id in current_ids]
+        logger.info("Dataset items: %d total, %d active (matching current YAML)", len(all_items), len(dataset_items))
 
         async def task(*, item, **kwargs):
             query = item.input

@@ -199,6 +199,8 @@ def ingest_folder(datasource: str) -> dict:
     for file_path in sorted(folder.rglob("*")):
         if not file_path.is_file():
             continue
+        if any(p.name.startswith("_") for p in file_path.relative_to(folder).parents):
+            continue
         if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             continue
         try:
