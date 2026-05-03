@@ -3,10 +3,10 @@
 # Only listed datasources are allowed — unlisted ones are rejected (default-deny).
 # User API key values are stored in .env — only the env var name is listed here.
 #
-# ABAC attributes (abac:, role) are declarative scaffolding for future Phase 2+
-# enforcement based on the fornix OU x classification policy
+# ABAC attributes (abac:, role) are enforced at runtime by app/rag/access_control.py
+# using the fornix OU x classification policy
 # (see ai-specs/projects/engineering/fornix/ou-classification.md).
-# They are currently parsed-and-ignored by app/rag/access_control.py.
+# authorized_ous for a user is derived from the OUs of their explicitly listed datasources.
 
 datasources:
   parents-docs:
