@@ -1,3 +1,4 @@
+# GENERATED — source: nirecom/agents .github/labels.yml — do not edit directly
 # Label definitions for GitHub Issues.
 # Applied via `bin/github-issues/sync-labels.sh` (uses `gh label create --force`).
 # Format: list of {name, color, description}. Colors are 6-digit hex without '#'.
@@ -18,6 +19,10 @@
   color: "5319e7"
   description: "Merged into another issue. Applied after close."
 
+- name: "status:regressed"
+  color: "e4763e"
+  description: "Reopened after a prior close; regression history is preserved."
+
 - name: "intent:clarified"
   color: "1d76db"
   description: "Issue body ratified via /clarify-intent. /workflow-init Path A skips the interview."
@@ -25,3 +30,69 @@
 - name: "meta"
   color: "e4e669"
   description: "Planning/architecture issue with no implementation. Sub-issues carry the actual work."
+
+# --- Severity ---
+# Definition SSOT: skills/issue-create/SKILL.md "Label policy". The descriptions
+# below are one-line summaries that reference it — never a second definition.
+- name: "severity:high"
+  color: "b60205"
+  description: "Mid-run interruption, security breach, or primary feature unusable (SSOT: /issue-create policy)"
+
+- name: "severity:low"
+  color: "c5def5"
+  description: "Cosmetic or safely deferrable; no label = normal severity"
+
+# --- Reporter Model ---
+- name: "reporter-model:fable"
+  color: "e99695"
+  description: "Model that reported this issue (reliability signal): Fable"
+
+- name: "reporter-model:opus"
+  color: "d4c5f9"
+  description: "Model that reported this issue (reliability signal): Claude Opus"
+
+- name: "reporter-model:sonnet"
+  color: "bfd4f2"
+  description: "Model that reported this issue (reliability signal): Claude Sonnet"
+
+- name: "reporter-model:ds4"
+  color: "f9d0c4"
+  description: "Model that reported this issue (reliability signal): DeepSeek v4"
+
+- name: "reporter-model:devstral"
+  color: "c2e0c6"
+  description: "Model that reported this issue (reliability signal): Devstral"
+
+- name: "reporter-model:qwen-coder"
+  color: "fef2c0"
+  description: "Model that reported this issue (reliability signal): Qwen Coder"
+
+# --- Model Scope ---
+- name: "model-scope:ds4"
+  color: "f9d0c4"
+  description: "Issue scoped to DeepSeek-v4-specific behavior (occurrence limited to this model)"
+
+- name: "model-scope:devstral"
+  color: "c2e0c6"
+  description: "Issue scoped to Devstral-specific behavior (occurrence limited to this model)"
+
+- name: "model-scope:qwen-coder"
+  color: "fef2c0"
+  description: "Issue scoped to Qwen-Coder-specific behavior (occurrence limited to this model)"
+
+- name: "model-scope:claude"
+  color: "bfd4f2"
+  description: "Issue scoped to Claude-family-specific behavior (occurrence limited to Claude models)"
+
+# --- Protected labels (never deleted by sync-labels.sh, even in normal sync) ---
+# GitHub default labels that sibling repos may use in existing issues.
+protected:
+  - bug
+  - enhancement
+  - documentation
+  - "good first issue"
+  - invalid
+  - duplicate
+  - question
+  - wontfix
+  - "help wanted"
